@@ -10,8 +10,6 @@ const UserSchema = new mongoose.Schema({
     },
     email: {
         type: String,
-        required: true,
-        unique: true,
         trim: true,
         lowercase: true
     },
@@ -23,6 +21,10 @@ const UserSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    conversations: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Conversation'
+    }],
     createdAt: {
         type: Date,
         default: Date.now
@@ -32,6 +34,8 @@ const UserSchema = new mongoose.Schema({
         default: Date.now
     }
 });
+
+UserSchema.index({ email: 1 }, { unique: true, sparse: true });
 
 UserSchema.pre('save', async function(next) {
     if (this.isModified('passwordHash')) {

@@ -3,9 +3,9 @@ const connectDB = require('./config/db');
 const http = require('http');
 const { Server } = require("socket.io");
 const crypto = require('crypto');
-
-// Connect to database
-connectDB();
+const { generateSymmetricKey, encryptSymmetric } = require('./utils/crypto');
+const Message = require('./models/Message');
+const Conversation = require('./models/Conversation');
 
 const PORT = process.env.PORT || 3000;
 
@@ -21,76 +21,48 @@ io.on('connection', (socket) => {
         socket.join(conversationId);
     });
 
-    socket.on('send_message', (data) => {
-        // This is a simplified representation. In a real application,
-        // you would have a more robust way of handling middleware with socket.io
-        const hiddenPattern = 'magic_word';
-        if (data.content && data.content.includes(hiddenPattern)) {
-            const redis = require('redis');
-            const client = redis.createClient();
-            client.on('error', (err) => console.log('Redis Client Error', err));
-            (async () => {
-                await client.connect();
-                await client.set(`hidden_mode:${data.senderId}`, 'true', 'EX', 3600);
-                await client.disconnect();
-            })();
+    socket.on('send_message', async (data) => {
+        const { conversationId, senderId, content } = data;
 
-            const Message = require('./models/Message');
-            const decoyMessage = new Message({
-                conversationId: data.conversationId,
-                senderId: data.senderId,
-                content: 'This is a decoy message.' // Or some other innocuous content
-            });
-            await decoyMessage.save();
-            io.to(data.conversationId).emit('receive_message', decoyMessage);
-        } else {
-            const Message = require('./models/Message');
-            const message = new Message(data);
-            await message.save();
-            io.to(data.conversationId).emit('receive_message', message);
+        const conversation = await Conversation.findById(conversationId);
+        if (!conversation) {
+            // Handle error: conversation not found
+            return;
         }
-    });
 
-    socket.on('handleSecretMessage', async (data) => {
-        const redis = require('redis');
-        const client = redis.createClient();
-        client.on('error', (err) => console.log('Redis Client Error', err));
+        const encrypted_content = encryptSymmetric(content, conversation.conversationKey);
 
-        try {
-            await client.connect();
-            const isHidden = await client.get(`hidden_mode:${data.senderId}`);
+        const message = new Message({
+            conversationId,
+            senderId,
+            encrypted_content
+        });
+        await message.save();
 
-            if (isHidden) {
-                const conversation = await SecretConversation.findById(data.conversationId);
-                if (conversation) {
-                    const { encrypt } = require('./utils/crypto');
-                    const encryptedContent = encrypt(data.content, conversation.conversationKey);
+        // For consistency with getMessages, we can send back the decrypted message
+        const messageData = message.toObject();
+        messageData.content = content;
+        delete messageData.encrypted_content;
 
-                    const secretMessage = new SecretMessage({
-                        conversationId: data.conversationId,
-                        senderId: data.senderId,
-                        content: encryptedContent
-                    });
-
-                    await secretMessage.save();
-                    io.to(data.conversationId).emit('receive_secret_message', secretMessage);
-                }
-            }
-        } catch (error) {
-            console.error('Failed to handle secret message:', error);
-        } finally {
-            await client.disconnect();
-        }
+        io.to(conversationId).emit('receive_message', messageData);
     });
 
     socket.on('edit_message', async (data) => {
         try {
             const message = await Message.findById(data.messageId);
             if (message) {
-                message.content = data.content;
-                message.edited = true;
-                await message.save();
-                io.to(message.conversationId.toString()).emit('message_edited', message);
+                const conversation = await Conversation.findById(message.conversationId);
+                if (conversation) {
+                    message.encrypted_content = encryptSymmetric(data.content, conversation.conversationKey);
+                    message.edited = true;
+                    await message.save();
+
+                    const messageData = message.toObject();
+                    messageData.content = data.content;
+                    delete messageData.encrypted_content;
+
+                    io.to(message.conversationId.toString()).emit('message_edited', messageData);
+                }
             }
         } catch (error) {
             console.error('Failed to edit message:', error);
@@ -101,8 +73,9 @@ io.on('connection', (socket) => {
         try {
             const message = await Message.findById(data.messageId);
             if (message) {
-                await message.remove();
-                io.to(message.conversationId.toString()).emit('message_deleted', { messageId: data.messageId });
+                const conversationId = message.conversationId.toString();
+                await message.deleteOne();
+                io.to(conversationId).emit('message_deleted', { messageId: data.messageId });
             }
         } catch (error) {
             console.error('Failed to delete message:', error);
@@ -124,26 +97,29 @@ io.on('connection', (socket) => {
     });
 });
 
-const { generateKey, encrypt } = require('./utils/crypto');
-
 function generateFakeTraffic() {
     const allSockets = io.sockets.sockets;
-    const socketIds = Object.keys(allSockets);
+    const socketIds = Array.from(allSockets.keys());
 
     if (socketIds.length > 0) {
         const randomSocketId = socketIds[Math.floor(Math.random() * socketIds.length)];
-        const randomSocket = allSockets[randomSocketId];
+        const randomSocket = allSockets.get(randomSocketId);
         if (randomSocket) {
             const randomData = crypto.randomBytes(Math.floor(Math.random() * 100) + 50).toString('hex');
-            const fakeKey = generateKey();
-            const encryptedData = encrypt(randomData, fakeKey);
+            const fakeKey = generateSymmetricKey();
+            const encryptedData = encryptSymmetric(randomData, fakeKey);
             randomSocket.emit('fake_traffic', { data: encryptedData });
         }
     }
 }
 
-setInterval(generateFakeTraffic, 5000); // Generate fake traffic every 5 seconds
+if (process.env.NODE_ENV !== 'test') {
+    connectDB();
+    setInterval(generateFakeTraffic, 5000); // Generate fake traffic every 5 seconds
 
-server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+    server.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+    });
+}
+
+module.exports = { app, server, io };

@@ -1,8 +1,12 @@
 const crypto = require('crypto');
 
 const trafficObfuscation = (req, res, next) => {
-    if (Math.random() < 0.3) { // 30% chance to add padding
-        const paddingSize = crypto.randomInt(10, 100); // Add 10 to 100 bytes of padding
+    // Randomly decide whether to add padding, with a probability between 10% and 50%
+    const probability = Math.random() * 0.4 + 0.1; // Random float between 0.1 and 0.5
+
+    if (Math.random() < probability) {
+        // Add a random amount of padding, between 10 and 500 bytes
+        const paddingSize = crypto.randomInt(10, 501);
         const padding = crypto.randomBytes(paddingSize);
         res.setHeader('X-Padding', padding.toString('hex'));
     }
