@@ -27,7 +27,7 @@ exports.login = async (req, res) => {
         if (!isMatch) {
             return res.status(401).send({ error: 'Invalid credentials' });
         }
-        const token = jwt.sign({ userId: user._id }, 'your_jwt_secret', { expiresIn: '1h' });
+        const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
         res.send({ token });
     } catch (error) {
         res.status(400).send({ error: 'Failed to login' });
@@ -36,9 +36,7 @@ exports.login = async (req, res) => {
 
 exports.getMe = async (req, res) => {
     try {
-        const token = req.header('Authorization').replace('Bearer ', '');
-        const decoded = jwt.verify(token, 'your_jwt_secret');
-        const user = await User.findById(decoded.userId);
+        const user = await User.findById(req.user._id);
         if (!user) {
             return res.status(404).send({ error: 'User not found' });
         }

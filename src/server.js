@@ -2,6 +2,7 @@ const app = require('./app');
 const connectDB = require('./config/db');
 const http = require('http');
 const { Server } = require("socket.io");
+const crypto = require('crypto');
 
 // Connect to database
 connectDB();
@@ -10,6 +11,8 @@ const PORT = process.env.PORT || 3000;
 
 const server = http.createServer(app);
 const io = new Server(server);
+
+const onlineUsers = {};
 
 io.on('connection', (socket) => {
     console.log('a user connected');
@@ -48,38 +51,93 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('send_secret_message', (data) => {
+    socket.on('handleSecretMessage', async (data) => {
         const redis = require('redis');
         const client = redis.createClient();
         client.on('error', (err) => console.log('Redis Client Error', err));
-        (async () => {
+
+        try {
             await client.connect();
             const isHidden = await client.get(`hidden_mode:${data.senderId}`);
-            await client.disconnect();
+
             if (isHidden) {
-                // In a real application, you would save this to the secret DB
-                console.log('Received secret message:', data);
-                io.to(data.conversationId).emit('receive_secret_message', data);
+                const conversation = await SecretConversation.findById(data.conversationId);
+                if (conversation) {
+                    const { encrypt } = require('./utils/crypto');
+                    const encryptedContent = encrypt(data.content, conversation.conversationKey);
+
+                    const secretMessage = new SecretMessage({
+                        conversationId: data.conversationId,
+                        senderId: data.senderId,
+                        content: encryptedContent
+                    });
+
+                    await secretMessage.save();
+                    io.to(data.conversationId).emit('receive_secret_message', secretMessage);
+                }
             }
-        })();
+        } catch (error) {
+            console.error('Failed to handle secret message:', error);
+        } finally {
+            await client.disconnect();
+        }
+    });
+
+    socket.on('edit_message', async (data) => {
+        try {
+            const message = await Message.findById(data.messageId);
+            if (message) {
+                message.content = data.content;
+                message.edited = true;
+                await message.save();
+                io.to(message.conversationId.toString()).emit('message_edited', message);
+            }
+        } catch (error) {
+            console.error('Failed to edit message:', error);
+        }
+    });
+
+    socket.on('delete_message', async (data) => {
+        try {
+            const message = await Message.findById(data.messageId);
+            if (message) {
+                await message.remove();
+                io.to(message.conversationId.toString()).emit('message_deleted', { messageId: data.messageId });
+            }
+        } catch (error) {
+            console.error('Failed to delete message:', error);
+        }
+    });
+
+    socket.on('go_online', (userId) => {
+        onlineUsers[userId] = true;
+        socket.userId = userId;
+        io.emit('user_online', userId);
     });
 
     socket.on('disconnect', () => {
+        if (socket.userId) {
+            delete onlineUsers[socket.userId];
+            io.emit('user_offline', socket.userId);
+        }
         console.log('user disconnected');
     });
 });
 
+const { generateKey, encrypt } = require('./utils/crypto');
+
 function generateFakeTraffic() {
-    // This is a simplified representation. In a real application,
-    // this would be more sophisticated.
     const allSockets = io.sockets.sockets;
     const socketIds = Object.keys(allSockets);
 
     if (socketIds.length > 0) {
         const randomSocketId = socketIds[Math.floor(Math.random() * socketIds.length)];
         const randomSocket = allSockets[randomSocketId];
-        if(randomSocket) {
-            randomSocket.emit('fake_traffic', { data: 'some_encrypted_dummy_data' });
+        if (randomSocket) {
+            const randomData = crypto.randomBytes(Math.floor(Math.random() * 100) + 50).toString('hex');
+            const fakeKey = generateKey();
+            const encryptedData = encrypt(randomData, fakeKey);
+            randomSocket.emit('fake_traffic', { data: encryptedData });
         }
     }
 }
