@@ -14,12 +14,20 @@ const SecretMessageSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    encrypted_ephemeralKey: {
+        type: String,
+        required: true
+    },
     encrypted_mediaUrl: {
         type: String
     },
     timestamp: {
         type: Date,
         default: Date.now
+    },
+    expiresAt: {
+        type: Date,
+        index: { expires: '1m' } // Automatically delete after 1 minute for testing
     }
 });
 
