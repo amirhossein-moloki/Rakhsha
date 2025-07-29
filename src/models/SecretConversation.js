@@ -12,10 +12,6 @@ const SecretConversationSchema = new mongoose.Schema({
     encrypted_name: {
         type: String
     },
-    conversationKey: {
-        type: String,
-        required: true
-    },
     createdAt: {
         type: Date,
         default: Date.now
