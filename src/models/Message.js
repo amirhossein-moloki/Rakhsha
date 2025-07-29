@@ -20,6 +20,10 @@ const MessageSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
+    edited: {
+        type: Boolean,
+        default: false
+    },
     mediaUrl: {
         type: String
     },

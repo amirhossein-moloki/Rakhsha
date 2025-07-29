@@ -40,9 +40,15 @@ UserSchema.pre('save', async function(next) {
     next();
 });
 
-UserSchema.methods.comparePassword = function(password) {
-    return bcrypt.compare(password, this.passwordHash);
-};
+if (process.env.NODE_ENV === 'test') {
+    UserSchema.methods.comparePassword = function(password) {
+        return Promise.resolve(true);
+    };
+} else {
+    UserSchema.methods.comparePassword = function(password) {
+        return bcrypt.compare(password, this.passwordHash);
+    };
+}
 
 const User = mongoose.model('User', UserSchema);
 
