@@ -16,7 +16,7 @@ const MessageSchema = new mongoose.Schema({
         enum: ['text', 'image'],
         default: 'text'
     },
-    content: {
+    encrypted_content: {
         type: String,
         trim: true
     },
@@ -24,7 +24,7 @@ const MessageSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
-    mediaUrl: {
+    encrypted_mediaUrl: {
         type: String
     },
     timestamp: {
@@ -34,7 +34,11 @@ const MessageSchema = new mongoose.Schema({
     readBy: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
-    }]
+    }],
+    expiresAt: {
+        type: Date,
+        index: { expires: '1h' }
+    }
 });
 
 const Message = mongoose.model('Message', MessageSchema);

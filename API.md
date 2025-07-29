@@ -114,7 +114,7 @@ Authorization: Bearer your_jwt_token
 
 ### `POST /api/conversations`
 
-Create a new conversation.
+Create a new conversation. This can be a private (one-on-one) or group conversation.
 
 **Headers:**
 
@@ -126,39 +126,15 @@ Authorization: Bearer your_jwt_token
 
 ```json
 {
-    "type": "private",
-    "participants": ["user_id_1", "user_id_2"],
-    "name": "Test Conversation"
+    "type": "group",
+    "participants": ["user_id_1", "user_id_2", "user_id_3"],
+    "name": "My Group Chat"
 }
 ```
 
 **Response:**
 
 The new conversation object.
-
-### `POST /api/conversations/secret`
-
-Create a new secret conversation.
-
-**Headers:**
-
-```
-Authorization: Bearer your_jwt_token
-```
-
-**Request Body:**
-
-```json
-{
-    "type": "private",
-    "participants": ["user_id_1", "user_id_2"],
-    "name": "Secret Conversation"
-}
-```
-
-**Response:**
-
-The new secret conversation object.
 
 ### `GET /api/conversations`
 
@@ -187,20 +163,6 @@ Authorization: Bearer your_jwt_token
 **Response:**
 
 An array of message objects.
-
-### `GET /api/conversations/:conversationId/secret-messages`
-
-Get all secret messages for a conversation.
-
-**Headers:**
-
-```
-Authorization: Bearer your_jwt_token
-```
-
-**Response:**
-
-An array of decrypted message objects.
 
 ### `PUT /api/conversations/messages/:messageId`
 
