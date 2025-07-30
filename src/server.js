@@ -98,17 +98,28 @@ io.on('connection', (socket) => {
         }
         console.log('user disconnected');
     });
+
+    // Handle client-side padding traffic
+    socket.on('client_padding', (data) => {
+        // This is for receiving padding from the client.
+        // We don't need to do anything with the data.
+        // Its purpose is to make traffic patterns more symmetric.
+    });
 });
 
 const redis = require('redis');
 
-// Create a reusable Redis client
-const redisClient = redis.createClient({
-    // Assuming Redis is running on localhost:6379.
-    // In a real production environment, this would come from env variables.
-});
-redisClient.on('error', (err) => console.log('Redis Client Error', err));
-redisClient.connect();
+let redisClient;
+
+if (process.env.NODE_ENV !== 'test') {
+    // Create a reusable Redis client
+    redisClient = redis.createClient({
+        // Assuming Redis is running on localhost:6379.
+        // In a real production environment, this would come from env variables.
+    });
+    redisClient.on('error', (err) => console.log('Redis Client Error', err));
+    redisClient.connect();
+}
 
 const PADDING_PACKET_SIZE = 1024; // 1 KB
 const PADDING_INTERVAL = 1000; // 1 second
@@ -146,11 +157,11 @@ if (process.env.NODE_ENV !== 'test') {
     connectDB();
 
     // Periodically send padding traffic to all clients
-    setInterval(sendPaddingTraffic, PADDING_INTERVAL);
+    const paddingInterval = setInterval(sendPaddingTraffic, PADDING_INTERVAL);
 
     server.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
     });
 }
 
-module.exports = { app, server, io };
+module.exports = { app, server, io, paddingInterval };
