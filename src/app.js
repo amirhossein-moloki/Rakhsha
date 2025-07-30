@@ -1,9 +1,14 @@
 const express = require('express');
 const app = express();
 const trafficObfuscation = require('./middleware/trafficObfuscation');
+const requestPadding = require('./middleware/requestPadding');
 
 app.use(express.json());
+
+// Apply traffic obfuscation middleware to all responses
 app.use(trafficObfuscation);
+// Apply request padding middleware to all requests
+app.use(requestPadding);
 
 const authRoutes = require('./routes/auth');
 const conversationRoutes = require('./routes/conversations');
