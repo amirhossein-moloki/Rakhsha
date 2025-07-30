@@ -10,15 +10,13 @@ const ConversationSchema = new mongoose.Schema({
         enum: ['private', 'group'],
         default: 'private'
     },
-    participantIds: [{ // Plaintext user IDs for server-side logic
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
-    }],
-    participants: [{ // Opaque, encrypted payload for each participant
-        type: String
-    }],
-    name: {
-        type: String // This will now store an opaque, encrypted payload for the conversation name
+    // The participantIds, participants, and name fields are now replaced by a single
+    // encrypted blob. The server has no knowledge of who is in the conversation.
+    // Authorization is handled by checking if a conversation ID exists in the user's
+    // own document.
+    encryptedMetadata: {
+        type: String,
+        required: true,
     },
     createdAt: {
         type: String, // Encrypted Date

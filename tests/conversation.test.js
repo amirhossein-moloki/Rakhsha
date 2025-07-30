@@ -57,9 +57,9 @@ describe('Conversation Routes', () => {
         const PADDING_SIZE = 4096; // 4 KB
         const conversationData = {
             type: 'private',
-            participants: participants,
+            // The new API expects encryptedMetadata and the plaintext participantIds
+            encryptedMetadata: JSON.stringify({ name: encryptedName, participants }),
             participantIds: participantIds,
-            name: encryptedName,
             encryptedCreatedAt: encryptedTimestamp,
             conversationKey: conversationKey,
         };
@@ -77,13 +77,15 @@ describe('Conversation Routes', () => {
             .send(conversationData);
 
         expect(res.statusCode).toEqual(201);
-        expect(res.body).toHaveProperty('name', encryptedName);
+        expect(res.body).toHaveProperty('encryptedMetadata', conversationData.encryptedMetadata);
         expect(res.body).toHaveProperty('createdAt', encryptedTimestamp);
 
         const conversationId = res.body._id;
         const conversation = await Conversation.findById(conversationId).select('+conversationKey');
         expect(conversation).not.toBeNull();
-        expect(decryptSymmetric(conversation.name, conversation.conversationKey)).toEqual(conversationName);
+
+        const decryptedMetadata = JSON.parse(conversation.encryptedMetadata);
+        expect(decryptSymmetric(decryptedMetadata.name, conversation.conversationKey)).toEqual(conversationName);
 
         // Check that the conversation is in the user's list of conversations
         const updatedUser = await User.findById(userId);
@@ -97,6 +99,6 @@ describe('Conversation Routes', () => {
         expect(getConvosRes.statusCode).toEqual(200);
         expect(getConvosRes.body).toBeInstanceOf(Array);
         expect(getConvosRes.body.length).toBe(1);
-        expect(getConvosRes.body[0].name).toEqual(encryptedName);
+        expect(getConvosRes.body[0].encryptedMetadata).toEqual(conversationData.encryptedMetadata);
     });
 });

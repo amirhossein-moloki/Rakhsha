@@ -9,29 +9,30 @@ const asyncHandler = require('express-async-handler');
  * @access Private
  */
 exports.createConversation = asyncHandler(async (req, res) => {
-    const { type, name, participants, participantIds, encryptedCreatedAt, conversationKey } = req.body;
+    // The client now sends an encrypted metadata blob and, for one-time use,
+    // the plaintext list of participant IDs.
+    const { type, encryptedMetadata, participantIds, encryptedCreatedAt, conversationKey } = req.body;
 
-    if (!encryptedCreatedAt) {
-        return res.status(400).send({ error: 'encryptedCreatedAt is required.' });
+    if (!encryptedMetadata || !participantIds || !encryptedCreatedAt) {
+        return res.status(400).send({ error: 'encryptedMetadata, participantIds, and encryptedCreatedAt are required.' });
     }
 
-    // Add the creator to the participants list if not already there
+    // Ensure the creator is in the participant list for atomicity.
     if (!participantIds.includes(req.user._id.toString())) {
         participantIds.push(req.user._id.toString());
     }
 
     const conversation = new Conversation({
         type,
-        name, // Opaque data from client
-        participants, // Opaque data from client
-        participantIds, // Plaintext IDs for server logic
+        encryptedMetadata, // The server stores this opaque blob.
         createdAt: encryptedCreatedAt,
-        lastMessageAt: encryptedCreatedAt, // Initially, last message time is creation time
-        conversationKey, // Encrypted conversation key
+        lastMessageAt: encryptedCreatedAt,
+        conversationKey,
     });
     await conversation.save();
 
-    // Add conversation to each participant's user object
+    // The server uses the plaintext participantIds to add the new conversation's
+    // ID to each user's document. The plaintext list is then discarded.
     await User.updateMany(
         { _id: { $in: participantIds } },
         { $push: { conversations: conversation._id } }
@@ -47,19 +48,22 @@ exports.createConversation = asyncHandler(async (req, res) => {
  */
 exports.getConversations = asyncHandler(async (req, res) => {
     // req.auth is populated by the auth middleware with the token payload
-    const userId = req.auth.userId;
     const inSecretMode = req.auth.secretMode === true;
 
-    // Build the query to find conversations where the user is a participant
-    // and the hidden status matches their current mode.
+    // The user object (from the auth middleware) now holds the list of conversation IDs.
+    // We no longer query by participantIds in the Conversation collection.
+    const user = await User.findById(req.auth.userId).select('conversations');
+    if (!user) {
+        return res.status(404).send({ error: 'User not found.' });
+    }
+
     const query = {
-        participantIds: userId,
+        _id: { $in: user.conversations },
         isHidden: inSecretMode
     };
 
     const conversations = await Conversation.find(query);
 
-    // The client is responsible for sorting, as lastMessageAt is encrypted.
     res.send(conversations);
 });
 
@@ -70,32 +74,29 @@ exports.getConversations = asyncHandler(async (req, res) => {
  */
 exports.getMessages = asyncHandler(async (req, res) => {
     const { conversationId } = req.params;
-    const conversation = await Conversation.findById(conversationId);
+    const user = req.user; // User object from auth middleware
 
-    if (!conversation) {
-        return res.status(404).send({ error: 'Conversation not found' });
-    }
-
-    // Authorize: Check if the user is a participant of the conversation
-    if (!conversation.participantIds.map(id => id.toString()).includes(req.user._id.toString())) {
+    // Authorize: Check if the conversationId exists in the user's own list of conversations.
+    // This is the new authorization model that doesn't require the server to read participant lists.
+    if (!user.conversations.map(id => id.toString()).includes(conversationId)) {
         return res.status(403).send({ error: 'Forbidden: You are not a participant of this conversation.' });
     }
 
+    // We can proceed, knowing the user is authorized for this conversation.
     const messages = await Message.find({ conversationId });
     res.send(messages); // Send raw message objects; client will decrypt
 });
 
 // Helper function to avoid code duplication for hiding/unhiding
-const updateHiddenState = async (conversationId, userId, isHidden) => {
-    const conversation = await Conversation.findById(conversationId);
-
-    if (!conversation) {
-        throw { statusCode: 404, message: 'Conversation not found' };
+const updateHiddenState = async (conversationId, user, isHidden) => {
+    // Authorize: Check if the conversationId exists in the user's own list of conversations.
+    if (!user.conversations.map(id => id.toString()).includes(conversationId)) {
+        throw { statusCode: 403, message: 'Forbidden: You are not a participant of this conversation.' };
     }
 
-    // Authorize: Check if the user is a participant
-    if (!conversation.participantIds.map(id => id.toString()).includes(userId.toString())) {
-        throw { statusCode: 403, message: 'Forbidden: You are not a participant of this conversation.' };
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation) {
+        throw { statusCode: 404, message: 'Conversation not found' };
     }
 
     conversation.isHidden = isHidden;
@@ -110,9 +111,8 @@ const updateHiddenState = async (conversationId, userId, isHidden) => {
  */
 exports.hideConversation = asyncHandler(async (req, res) => {
     const { conversationId } = req.params;
-    const userId = req.auth.userId; // Use req.auth from middleware
-
-    await updateHiddenState(conversationId, userId, true);
+    // The helper function now requires the full user object for authorization.
+    await updateHiddenState(conversationId, req.user, true);
     res.status(200).send({ message: 'Conversation hidden successfully.' });
 });
 
@@ -123,8 +123,7 @@ exports.hideConversation = asyncHandler(async (req, res) => {
  */
 exports.unhideConversation = asyncHandler(async (req, res) => {
     const { conversationId } = req.params;
-    const userId = req.auth.userId; // Use req.auth from middleware
-
-    await updateHiddenState(conversationId, userId, false);
+    // The helper function now requires the full user object for authorization.
+    await updateHiddenState(conversationId, req.user, false);
     res.status(200).send({ message: 'Conversation unhidden successfully.' });
 });

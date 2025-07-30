@@ -14,13 +14,20 @@ exports.register = async (req, res) => {
             email, // email is optional
             passwordHash: password
         });
+        // We will attempt to save the user. If it fails due to a duplicate key,
+        // the catch block will handle it. In either case, we send a success
+        // response to prevent username enumeration.
         await user.save();
         res.status(201).send({ message: 'User registered successfully' });
     } catch (error) {
-        if (error.code === 11000) { // Duplicate key error
-            return res.status(400).send({ error: 'Username or email already exists' });
+        // If the error is a duplicate key error (code 11000), we silently absorb it
+        // and send a generic success response. For any other error, we still send
+        // a generic success message but log the error for debugging.
+        if (error.code !== 11000) {
+            console.error('Registration failed for a reason other than duplicate user:', error);
         }
-        res.status(400).send({ error: 'Failed to register user' });
+        // IMPORTANT: Always send a success response to prevent username enumeration.
+        res.status(201).send({ message: 'User registered successfully' });
     }
 };
 

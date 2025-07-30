@@ -38,7 +38,9 @@ const MessageSchema = new mongoose.Schema({
     }],
     expiresAt: {
         type: Date,
-        index: { expires: '1h' }
+        // The TTL index is now managed dynamically in the application logic
+        // rather than being hardcoded in the schema.
+        index: { expires: '1s', sparse: true } // Expire docs 1s after expiresAt, only index docs with this field.
     }
 });
 

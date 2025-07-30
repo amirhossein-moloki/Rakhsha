@@ -121,10 +121,15 @@ describe('Secret Mode E2E Tests', () => {
             secretToken = jwt.sign({ userId: user._id, secretMode: true }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
             // Create one visible and one hidden conversation
-            visibleConversation = new Conversation({ participantIds: [user._id], isHidden: false, createdAt: 'encrypted-date' });
-            hiddenConversation = new Conversation({ participantIds: [user._id], isHidden: true, createdAt: 'encrypted-date' });
+            visibleConversation = new Conversation({ encryptedMetadata: 'visible-convo', isHidden: false, createdAt: 'encrypted-date' });
+            hiddenConversation = new Conversation({ encryptedMetadata: 'hidden-convo', isHidden: true, createdAt: 'encrypted-date' });
             await visibleConversation.save();
             await hiddenConversation.save();
+
+            // Add these conversations to the user's list for the new authorization model
+            user.conversations.push(visibleConversation._id);
+            user.conversations.push(hiddenConversation._id);
+            await user.save();
         });
 
         it('should show only visible conversations in normal mode', async () => {
