@@ -10,7 +10,12 @@ const trafficObfuscation = (req, res, next) => {
         const padding = crypto.randomBytes(paddingSize);
         res.setHeader('X-Padding', padding.toString('hex'));
     }
-    next();
+
+    // Add a random delay to make traffic analysis harder
+    const delay = crypto.randomInt(50, 301); // 50 to 300 ms
+    setTimeout(() => {
+        next();
+    }, delay);
 };
 
 module.exports = trafficObfuscation;

@@ -4,7 +4,7 @@ const asyncHandler = require('express-async-handler');
 const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
-const fs = require('fs');
+const fs = require('fs').promises;
 
 // Use memory storage to handle the file as a buffer
 const storage = multer.memoryStorage();
@@ -41,13 +41,8 @@ exports.uploadFile = [
         const storageFilename = crypto.randomBytes(16).toString('hex') + path.extname(req.file.originalname);
         const storagePath = path.join('uploads', storageFilename);
 
-        // Ensure the uploads directory exists
-        if (!fs.existsSync('uploads')) {
-            fs.mkdirSync('uploads');
-        }
-
-        // Save the encrypted buffer to disk
-        fs.writeFileSync(storagePath, req.file.buffer);
+        // Save the encrypted buffer to disk asynchronously
+        await fs.writeFile(storagePath, req.file.buffer);
 
         const newFile = new File({
             conversationId,
