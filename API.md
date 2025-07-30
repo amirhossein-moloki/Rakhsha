@@ -110,6 +110,13 @@ Authorization: Bearer your_jwt_token
 }
 ```
 
+### Stealth Mode
+
+The API provides endpoints to activate a "stealth mode". This feature is intended to provide a layer of deniability or enhanced privacy.
+
+- **Activation**: To activate this mode, a client must first request a one-time password (OTP) from `POST /api/auth/generate-otp`. This OTP is then sent to `POST /api/auth/activate-hidden-mode`.
+- **Functionality**: Currently, activating stealth mode sets a temporary flag on the user's session on the server. However, **this flag is not yet used and has no effect on the application's behavior**. The feature is considered dormant or incomplete at this time.
+
 ## Conversations
 
 ### `POST /api/conversations`

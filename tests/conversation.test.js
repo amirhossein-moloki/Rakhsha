@@ -25,12 +25,20 @@ describe('Conversation Routes', () => {
         await user.save();
         userId = user._id;
 
+        const PADDING_SIZE = 4096;
+        const loginData = {
+            email: 'test@test.com',
+            password: 'password' // In test env, password check is mocked to always pass
+        };
+        const loginDataString = JSON.stringify(loginData);
+        const loginPaddingNeeded = PADDING_SIZE - loginDataString.length;
+        if (loginPaddingNeeded > 0) {
+            loginData.padding = 'a'.repeat(loginPaddingNeeded);
+        }
+
         const resLogin = await request(app)
             .post('/api/auth/login')
-            .send({
-                email: 'test@test.com',
-                password: 'password' // In test env, password check is mocked to always pass
-            });
+            .send(loginData);
         token = resLogin.body.token;
     });
 
@@ -46,17 +54,27 @@ describe('Conversation Routes', () => {
         const participantIds = [userId.toString(), otherUser._id.toString()];
         const participants = participantIds.map(id => encryptSymmetric(id, conversationKey));
 
+        const PADDING_SIZE = 4096; // 4 KB
+        const conversationData = {
+            type: 'private',
+            participants: participants,
+            participantIds: participantIds,
+            name: encryptedName,
+            encryptedCreatedAt: encryptedTimestamp,
+            conversationKey: conversationKey,
+        };
+
+        const dataString = JSON.stringify(conversationData);
+        const paddingNeeded = PADDING_SIZE - dataString.length;
+
+        if (paddingNeeded > 0) {
+            conversationData.padding = 'a'.repeat(paddingNeeded);
+        }
+
         const res = await request(app)
             .post('/api/conversations')
             .set('Authorization', `Bearer ${token}`)
-            .send({
-                type: 'private',
-                participants: participants,
-                participantIds: participantIds,
-                name: encryptedName,
-                encryptedCreatedAt: encryptedTimestamp,
-                conversationKey: conversationKey
-            });
+            .send(conversationData);
 
         expect(res.statusCode).toEqual(201);
         expect(res.body).toHaveProperty('name', encryptedName);

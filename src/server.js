@@ -20,6 +20,24 @@ const onlineUsers = {};
 io.on('connection', (socket) => {
     console.log('a user connected');
 
+    // Start a timer to disconnect the client if they don't send padding
+    const setPaddingTimeout = () => {
+        // Clear any existing timer
+        if (socket.paddingTimeout) {
+            clearTimeout(socket.paddingTimeout);
+        }
+
+        // Set a new timer
+        socket.paddingTimeout = setTimeout(() => {
+            // Disconnect the client if they fail to send padding in time
+            console.log(`Disconnecting client ${socket.id} for not sending cover traffic.`);
+            socket.disconnect(true);
+        }, 5000); // 5-second timeout
+    };
+
+    // Set the initial timer when the client connects
+    setPaddingTimeout();
+
     socket.on('join_conversation', (conversationId) => {
         socket.join(conversationId);
     });
@@ -92,6 +110,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
+        // Clear the padding timeout timer to prevent memory leaks
+        if (socket.paddingTimeout) {
+            clearTimeout(socket.paddingTimeout);
+        }
+
         if (socket.userId) {
             delete onlineUsers[socket.userId];
             io.emit('user_offline', socket.userId);
@@ -101,9 +124,8 @@ io.on('connection', (socket) => {
 
     // Handle client-side padding traffic
     socket.on('client_padding', (data) => {
-        // This is for receiving padding from the client.
-        // We don't need to do anything with the data.
-        // Its purpose is to make traffic patterns more symmetric.
+        // The client has sent cover traffic. Reset the disconnect timer.
+        setPaddingTimeout();
     });
 });
 
