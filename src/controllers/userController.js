@@ -1,7 +1,6 @@
 const User = require('../models/User');
 const asyncHandler = require('express-async-handler');
 const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 
 /**
  * @description Upload user's public key bundle
@@ -100,15 +99,14 @@ exports.setSecondaryPassword = asyncHandler(async (req, res) => {
         return res.status(400).send({ error: 'Secondary password must be a string of at least 8 characters.' });
     }
 
-    // We need to explicitly select the hash field since it's not selected by default
-    const user = await User.findById(req.user._id).select('+secondaryPasswordHash');
+    const user = await User.findById(req.user._id);
     if (!user) {
         return res.status(404).send({ error: 'User not found.' });
     }
 
-    user.secondaryPasswordHash = await bcrypt.hash(secondaryPassword, 10);
+    // The hashing is now handled by the pre-save hook in the User model
+    user.secondaryPasswordHash = secondaryPassword;
     await user.save();
 
-    // Avoid sending back any user data, just a confirmation
     res.status(200).send({ message: 'Secondary password set successfully.' });
 });

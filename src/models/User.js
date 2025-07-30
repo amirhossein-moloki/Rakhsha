@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+const argon2 = require('argon2');
 
 const UserSchema = new mongoose.Schema({
     username: {
@@ -56,20 +56,17 @@ UserSchema.index({ email: 1 }, { unique: true, sparse: true });
 
 UserSchema.pre('save', async function(next) {
     if (this.isModified('passwordHash')) {
-        this.passwordHash = await bcrypt.hash(this.passwordHash, 10);
+        this.passwordHash = await argon2.hash(this.passwordHash);
+    }
+    if (this.isModified('secondaryPasswordHash')) {
+        this.secondaryPasswordHash = await argon2.hash(this.secondaryPasswordHash);
     }
     next();
 });
 
-if (process.env.NODE_ENV === 'test') {
-    UserSchema.methods.comparePassword = function(password) {
-        return Promise.resolve(true);
-    };
-} else {
-    UserSchema.methods.comparePassword = function(password) {
-        return bcrypt.compare(password, this.passwordHash);
-    };
-}
+UserSchema.methods.comparePassword = function(password) {
+    return argon2.verify(this.passwordHash, password);
+};
 
 const User = mongoose.model('User', UserSchema);
 

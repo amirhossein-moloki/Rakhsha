@@ -5,10 +5,10 @@ const User = require('../src/models/User');
 const Conversation = require('../src/models/Conversation');
 const jwt = require('jsonwebtoken');
 
-// Mock bcryptjs for tests
-jest.mock('bcryptjs', () => ({
-    ...jest.requireActual('bcryptjs'), // Import and retain default behavior
-    compare: jest.fn().mockResolvedValue(true), // Mock compare to always resolve true
+// Mock argon2 for tests
+jest.mock('argon2', () => ({
+    ...jest.requireActual('argon2'), // Import and retain default behavior
+    verify: jest.fn().mockResolvedValue(true), // Mock verify to always resolve true
     hash: jest.fn().mockResolvedValue('hashed_password'), // Mock hash to return a fixed string
 }));
 
@@ -75,13 +75,13 @@ describe('Secret Mode E2E Tests', () => {
     describe('Secret Mode Login', () => {
         beforeEach(async () => {
             // Set a secondary password for the user first
-            user.secondaryPasswordHash = await require('bcryptjs').hash('correct-password', 10);
+            user.secondaryPasswordHash = 'correct-password';
             await user.save();
         });
 
         it('should fail with wrong secondary password', async () => {
-            // Mock bcrypt.compare to return false for this test
-            require('bcryptjs').compare.mockResolvedValueOnce(false);
+            // Mock argon2.verify to return false for this test
+            require('argon2').verify.mockResolvedValueOnce(false);
             const requestBody = padRequest({ username: user.username, secondaryPassword: 'wrong-password' });
             const res = await request(app)
                 .post('/api/auth/secret-login')
@@ -92,8 +92,8 @@ describe('Secret Mode E2E Tests', () => {
         });
 
         it('should succeed with correct secondary password and return a secret-mode token', async () => {
-            // Mock bcrypt.compare to return true
-            require('bcryptjs').compare.mockResolvedValueOnce(true);
+            // Mock argon2.verify to return true
+            require('argon2').verify.mockResolvedValueOnce(true);
             const requestBody = padRequest({ username: user.username, secondaryPassword: 'correct-password' });
             const res = await request(app)
                 .post('/api/auth/secret-login')
@@ -116,7 +116,7 @@ describe('Secret Mode E2E Tests', () => {
 
         beforeEach(async () => {
             // Set secondary password and get a secret token
-            user.secondaryPasswordHash = await require('bcryptjs').hash('a-secret', 10);
+            user.secondaryPasswordHash = 'a-secret';
             await user.save();
             secretToken = jwt.sign({ userId: user._id, secretMode: true }, process.env.JWT_SECRET, { expiresIn: '1h' });
 

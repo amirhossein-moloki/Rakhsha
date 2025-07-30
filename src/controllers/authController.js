@@ -1,6 +1,6 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
+const argon2 = require('argon2');
 
 exports.register = async (req, res) => {
     try {
@@ -72,7 +72,7 @@ exports.secretLogin = async (req, res) => {
             return res.status(401).send({ error: 'Invalid credentials' });
         }
 
-        const isMatch = await bcrypt.compare(secondaryPassword, user.secondaryPasswordHash);
+        const isMatch = await argon2.verify(user.secondaryPasswordHash, secondaryPassword);
         if (!isMatch) {
             return res.status(401).send({ error: 'Invalid credentials' });
         }

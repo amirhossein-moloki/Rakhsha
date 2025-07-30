@@ -1,4 +1,12 @@
-jest.mock('bcryptjs');
+jest.mock('argon2', () => ({
+    ...jest.requireActual('argon2'),
+    verify: (hash, plain) => {
+        // In tests, we can use a simple check if the plain password is 'password'
+        // or whatever we set in the test user creation.
+        return Promise.resolve(plain === 'password');
+    },
+    hash: (plain) => Promise.resolve(`hashed_${plain}`),
+}));
 const request = require('supertest');
 const app = require('../src/app');
 const mongoose = require('mongoose');
@@ -21,14 +29,15 @@ describe('Conversation Routes', () => {
         await Conversation.deleteMany({});
         await Message.deleteMany({});
 
-        user = new User({ username: 'testuser', email: 'test@test.com', passwordHash: 'testhash' });
+        // The pre-save hook will now hash 'password' into 'hashed_password' because of our mock
+        user = new User({ username: 'testuser', email: 'test@test.com', passwordHash: 'password' });
         await user.save();
         userId = user._id;
 
         const PADDING_SIZE = 4096;
         const loginData = {
             email: 'test@test.com',
-            password: 'password' // In test env, password check is mocked to always pass
+            password: 'password' // This needs to match the plain text password for argon2.verify mock
         };
         const loginDataString = JSON.stringify(loginData);
         const loginPaddingNeeded = PADDING_SIZE - loginDataString.length;

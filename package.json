@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/amirhossein-moloki/Rakhsha#readme",
   "dependencies": {
-    "bcryptjs": "^3.0.2",
+    "argon2": "^0.40.3",
     "crypto-js": "^4.2.0",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
