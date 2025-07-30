@@ -17,6 +17,13 @@ const UserSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    // For E2EE Key Exchange (X3DH)
+    identityKey: { // Long-term public identity key
+        type: String,
+    },
+    preKeyBundle: { // Signed pre-key + one-time pre-keys
+        type: mongoose.Schema.Types.Mixed,
+    },
     profilePictureUrl: {
         type: String,
         default: ''

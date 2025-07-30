@@ -12,6 +12,9 @@ const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Make io accessible to our router
+app.set('socketio', io);
+
 const onlineUsers = {};
 
 io.on('connection', (socket) => {
@@ -97,25 +100,63 @@ io.on('connection', (socket) => {
     });
 });
 
-function generateFakeTraffic() {
-    const allSockets = io.sockets.sockets;
-    const socketIds = Array.from(allSockets.keys());
+const redis = require('redis');
 
-    if (socketIds.length > 0) {
-        const randomSocketId = socketIds[Math.floor(Math.random() * socketIds.length)];
-        const randomSocket = allSockets.get(randomSocketId);
-        if (randomSocket) {
-            const randomData = crypto.randomBytes(Math.floor(Math.random() * 100) + 50).toString('hex');
-            const fakeKey = generateSymmetricKey();
-            const encryptedData = encryptSymmetric(randomData, fakeKey);
-            randomSocket.emit('fake_traffic', { data: encryptedData });
+// Create a reusable Redis client
+const redisClient = redis.createClient({
+    // Assuming Redis is running on localhost:6379.
+    // In a real production environment, this would come from env variables.
+});
+redisClient.on('error', (err) => console.log('Redis Client Error', err));
+redisClient.connect();
+
+/**
+ * Generates and sends decoy traffic to users who have hidden mode enabled.
+ * This function is called periodically by setInterval.
+ */
+async function generateFakeTraffic() {
+    const allSockets = io.sockets.sockets;
+
+    // Iterate over each connected socket
+    for (const [, socket] of allSockets.entries()) {
+        if (socket.userId) {
+            try {
+                const isHidden = await redisClient.get(`hidden_mode:${socket.userId}`);
+                if (isHidden === 'true') {
+                    // This user is in hidden mode. Send them some decoy traffic.
+                    const randomData = crypto.randomBytes(Math.floor(Math.random() * 100) + 50).toString('hex');
+                    const fakeKey = generateSymmetricKey();
+                    const encryptedData = encryptSymmetric(randomData, fakeKey);
+
+                    // Add a small, random delay to make the traffic pattern less predictable
+                    const delay = Math.random() * 2500; // 0 to 2.5 seconds
+                    setTimeout(() => {
+                         socket.emit('fake_traffic', { data: encryptedData });
+                    }, delay);
+                }
+            } catch (err) {
+                // Log the error but don't crash the loop
+                console.error('Redis error in generateFakeTraffic:', err);
+            }
         }
     }
 }
 
+const fs = require('fs');
+const path = require('path');
+
 if (process.env.NODE_ENV !== 'test') {
+    // Ensure the uploads directory exists before starting the server
+    const uploadsDir = path.join(__dirname, '..', 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+        console.log('Created uploads directory.');
+    }
+
     connectDB();
-    setInterval(generateFakeTraffic, 5000); // Generate fake traffic every 5 seconds
+
+    // Periodically check which users need decoy traffic
+    setInterval(generateFakeTraffic, 5000);
 
     server.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
