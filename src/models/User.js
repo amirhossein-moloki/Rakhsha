@@ -39,6 +39,12 @@ const UserSchema = new mongoose.Schema({
     lastActive: {
         type: Date,
         default: Date.now
+    },
+    settings: {
+        readReceiptsEnabled: {
+            type: Boolean,
+            default: false
+        }
     }
 });
 

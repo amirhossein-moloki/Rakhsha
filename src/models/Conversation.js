@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 
 const ConversationSchema = new mongoose.Schema({
+    conversationKey: {
+        type: String,
+        select: false, // The server should not expose this key
+    },
     type: {
         type: String,
         enum: ['private', 'group'],
@@ -17,12 +21,11 @@ const ConversationSchema = new mongoose.Schema({
         type: String // This will now store an opaque, encrypted payload for the conversation name
     },
     createdAt: {
-        type: Date,
-        default: Date.now
+        type: String, // Encrypted Date
+        required: true
     },
     lastMessageAt: {
-        type: Date,
-        default: Date.now
+        type: String // Encrypted Date
     }
 });
 

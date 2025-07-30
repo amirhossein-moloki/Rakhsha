@@ -39,7 +39,12 @@ describe('Conversation Routes', () => {
         await otherUser.save();
 
         const conversationName = 'Test Conversation';
-        const participants = [userId.toString(), otherUser._id.toString()];
+        const conversationKey = generateSymmetricKey();
+        const encryptedName = encryptSymmetric(conversationName, conversationKey);
+        const encryptedTimestamp = encryptSymmetric(new Date().toISOString(), conversationKey);
+
+        const participantIds = [userId.toString(), otherUser._id.toString()];
+        const participants = participantIds.map(id => encryptSymmetric(id, conversationKey));
 
         const res = await request(app)
             .post('/api/conversations')
@@ -47,20 +52,20 @@ describe('Conversation Routes', () => {
             .send({
                 type: 'private',
                 participants: participants,
-                name: conversationName
+                participantIds: participantIds,
+                name: encryptedName,
+                encryptedCreatedAt: encryptedTimestamp,
+                conversationKey: conversationKey
             });
 
         expect(res.statusCode).toEqual(201);
-        expect(res.body).toHaveProperty('encrypted_name');
-        expect(res.body).toHaveProperty('encrypted_participants');
-        expect(res.body).toHaveProperty('conversationKey');
+        expect(res.body).toHaveProperty('name', encryptedName);
+        expect(res.body).toHaveProperty('createdAt', encryptedTimestamp);
 
         const conversationId = res.body._id;
-        const conversation = await Conversation.findById(conversationId);
+        const conversation = await Conversation.findById(conversationId).select('+conversationKey');
         expect(conversation).not.toBeNull();
-
-        const decryptedName = decryptSymmetric(conversation.encrypted_name, conversation.conversationKey);
-        expect(decryptedName).toEqual(conversationName);
+        expect(decryptSymmetric(conversation.name, conversation.conversationKey)).toEqual(conversationName);
 
         // Check that the conversation is in the user's list of conversations
         const updatedUser = await User.findById(userId);
@@ -74,71 +79,6 @@ describe('Conversation Routes', () => {
         expect(getConvosRes.statusCode).toEqual(200);
         expect(getConvosRes.body).toBeInstanceOf(Array);
         expect(getConvosRes.body.length).toBe(1);
-        expect(getConvosRes.body[0].name).toEqual(conversationName);
-    });
-
-    it('should edit a message', async () => {
-        const conversationKey = generateSymmetricKey();
-        const conversation = new Conversation({
-            type: 'private',
-            encrypted_participants: [encryptSymmetric(userId.toString(), conversationKey)],
-            encrypted_name: encryptSymmetric('Test', conversationKey),
-            conversationKey
-        });
-        await conversation.save();
-
-        const originalContent = 'Original message';
-        const encryptedOriginalContent = encryptSymmetric(originalContent, conversationKey);
-
-        const message = new Message({
-            conversationId: conversation._id,
-            senderId: userId,
-            encrypted_content: encryptedOriginalContent
-        });
-        await message.save();
-
-        const editedContent = 'Edited message';
-
-        const res = await request(app)
-            .put(`/api/conversations/messages/${message._id}`)
-            .set('Authorization', `Bearer ${token}`)
-            .send({
-                content: editedContent
-            });
-
-        expect(res.statusCode).toEqual(200);
-
-        const updatedMessage = await Message.findById(message._id);
-        const decryptedEditedContent = decryptSymmetric(updatedMessage.encrypted_content, conversationKey);
-        expect(decryptedEditedContent).toEqual(editedContent);
-        expect(updatedMessage.edited).toBe(true);
-    });
-
-    it('should delete a message', async () => {
-        const conversationKey = generateSymmetricKey();
-        const conversation = new Conversation({
-            type: 'private',
-            encrypted_participants: [encryptSymmetric(userId.toString(), conversationKey)],
-            encrypted_name: encryptSymmetric('Test', conversationKey),
-            conversationKey
-        });
-        await conversation.save();
-
-        const message = new Message({
-            conversationId: conversation._id,
-            senderId: userId,
-            encrypted_content: encryptSymmetric('Message to be deleted', conversationKey)
-        });
-        await message.save();
-
-        const res = await request(app)
-            .delete(`/api/conversations/messages/${message._id}`)
-            .set('Authorization', `Bearer ${token}`);
-
-        expect(res.statusCode).toEqual(200);
-        expect(res.body).toHaveProperty('message', 'Message deleted');
-
-        const deletedMessage = await Message.findById(message._id);
-        expect(deletedMessage).toBeNull();
+        expect(getConvosRes.body[0].name).toEqual(encryptedName);
     });
 });

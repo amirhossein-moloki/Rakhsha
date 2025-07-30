@@ -63,3 +63,26 @@ exports.getUserFingerprint = asyncHandler(async (req, res) => {
 
     res.status(200).send({ username: user.username, fingerprint });
 });
+
+/**
+ * @description Update user settings
+ * @route PUT /api/users/settings
+ * @access Private
+ */
+exports.updateUserSettings = asyncHandler(async (req, res) => {
+    const { readReceiptsEnabled } = req.body;
+
+    if (typeof readReceiptsEnabled !== 'boolean') {
+        return res.status(400).send({ error: 'readReceiptsEnabled must be a boolean.' });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+        return res.status(404).send({ error: 'User not found.' });
+    }
+
+    user.settings.readReceiptsEnabled = readReceiptsEnabled;
+    await user.save();
+
+    res.status(200).send({ message: 'Settings updated successfully.' });
+});

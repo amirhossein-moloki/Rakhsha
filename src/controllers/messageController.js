@@ -8,10 +8,10 @@ const asyncHandler =require('express-async-handler');
  * @access Private
  */
 exports.sendMessage = asyncHandler(async (req, res) => {
-    const { conversationId, recipientId, messageType, ciphertextPayload } = req.body;
+    const { conversationId, recipientId, messageType, ciphertextPayload, encryptedTimestamp } = req.body;
 
-    if (!conversationId || !recipientId || !ciphertextPayload) {
-        return res.status(400).send({ error: 'conversationId, recipientId, and ciphertextPayload are required.' });
+    if (!conversationId || !recipientId || !ciphertextPayload || !encryptedTimestamp) {
+        return res.status(400).send({ error: 'conversationId, recipientId, ciphertextPayload, and encryptedTimestamp are required.' });
     }
 
     // 1. Find the conversation
@@ -37,7 +37,7 @@ exports.sendMessage = asyncHandler(async (req, res) => {
     await message.save();
 
     // 4. Update the conversation's lastMessageAt timestamp
-    conversation.lastMessageAt = message.timestamp;
+    conversation.lastMessageAt = encryptedTimestamp;
     await conversation.save();
 
     // 5. Notify the recipient via WebSocket in real-time
@@ -72,22 +72,26 @@ exports.markMessageAsRead = asyncHandler(async (req, res) => {
         return res.status(403).send({ error: 'Forbidden: You are not a participant in this conversation.' });
     }
 
-    // Add the user to the 'readBy' array if they are not already in it.
-    const updatedMessageResult = await Message.updateOne(
-        { _id: messageId },
-        { $addToSet: { readBy: userId } }
-    );
+    // Check if the user has read receipts enabled.
+    const user = req.user; // We should already have the user object from the auth middleware.
+    if (user && user.settings && user.settings.readReceiptsEnabled) {
+        // Add the user to the 'readBy' array if they are not already in it.
+        const updatedMessageResult = await Message.updateOne(
+            { _id: messageId },
+            { $addToSet: { readBy: userId } }
+        );
 
-    // If the update resulted in a change, notify the room.
-    if (updatedMessageResult.nModified > 0) {
-        const io = req.app.get('socketio');
-        if (io) {
-            io.to(message.conversationId.toString()).emit('message_read', {
-                messageId: message._id,
-                conversationId: message.conversationId,
-                readerId: userId,
-                readAt: new Date()
-            });
+        // If the update resulted in a change, notify the room.
+        if (updatedMessageResult.modifiedCount > 0) {
+            const io = req.app.get('socketio');
+            if (io) {
+                io.to(message.conversationId.toString()).emit('message_read', {
+                    messageId: message._id,
+                    conversationId: message.conversationId,
+                    readerId: userId,
+                    readAt: new Date()
+                });
+            }
         }
     }
 

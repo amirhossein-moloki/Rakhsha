@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { uploadKeys, getKeysForUser, getUserFingerprint } = require('../controllers/userController');
+const { uploadKeys, getKeysForUser, getUserFingerprint, updateUserSettings } = require('../controllers/userController');
 const authMiddleware = require('../middleware/auth');
 
 // All routes in this file are protected
 router.use(authMiddleware);
+
+// Route to update user settings
+router.put('/settings', updateUserSettings);
 
 // Route to upload public keys
 router.post('/keys', uploadKeys);
