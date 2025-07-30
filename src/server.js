@@ -110,34 +110,24 @@ const redisClient = redis.createClient({
 redisClient.on('error', (err) => console.log('Redis Client Error', err));
 redisClient.connect();
 
+const PADDING_PACKET_SIZE = 1024; // 1 KB
+const PADDING_INTERVAL = 1000; // 1 second
+
 /**
- * Generates and sends decoy traffic to users who have hidden mode enabled.
- * This function is called periodically by setInterval.
+ * Sends fixed-size padding packets to all connected clients at a regular interval.
+ * This creates a constant stream of traffic to obfuscate real user activity.
  */
-async function generateFakeTraffic() {
+function sendPaddingTraffic() {
     const allSockets = io.sockets.sockets;
 
-    // Iterate over each connected socket
-    for (const [, socket] of allSockets.entries()) {
-        if (socket.userId) {
-            try {
-                const isHidden = await redisClient.get(`hidden_mode:${socket.userId}`);
-                if (isHidden === 'true') {
-                    // This user is in hidden mode. Send them some decoy traffic.
-                    const randomData = crypto.randomBytes(Math.floor(Math.random() * 100) + 50).toString('hex');
-                    const fakeKey = generateSymmetricKey();
-                    const encryptedData = encryptSymmetric(randomData, fakeKey);
+    const paddingData = crypto.randomBytes(PADDING_PACKET_SIZE);
+    const fakeKey = generateSymmetricKey(); // Use a new dummy key for each broadcast
+    const encryptedPadding = encryptSymmetric(paddingData.toString('hex'), fakeKey);
 
-                    // Add a small, random delay to make the traffic pattern less predictable
-                    const delay = Math.random() * 2500; // 0 to 2.5 seconds
-                    setTimeout(() => {
-                         socket.emit('fake_traffic', { data: encryptedData });
-                    }, delay);
-                }
-            } catch (err) {
-                // Log the error but don't crash the loop
-                console.error('Redis error in generateFakeTraffic:', err);
-            }
+    // Iterate over each connected socket and send the padding packet
+    for (const [, socket] of allSockets.entries()) {
+        if (socket.userId) { // Ensure the user is authenticated and has a userId associated
+            socket.emit('padding_traffic', { data: encryptedPadding });
         }
     }
 }
@@ -155,8 +145,8 @@ if (process.env.NODE_ENV !== 'test') {
 
     connectDB();
 
-    // Periodically check which users need decoy traffic
-    setInterval(generateFakeTraffic, 5000);
+    // Periodically send padding traffic to all clients
+    setInterval(sendPaddingTraffic, PADDING_INTERVAL);
 
     server.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);

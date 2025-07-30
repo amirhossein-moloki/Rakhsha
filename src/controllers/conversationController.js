@@ -9,7 +9,11 @@ const asyncHandler = require('express-async-handler');
  * @access Private
  */
 exports.createConversation = asyncHandler(async (req, res) => {
-    const { type, name, participants, participantIds } = req.body;
+    const { type, name, participants, participantIds, encryptedCreatedAt, conversationKey } = req.body;
+
+    if (!encryptedCreatedAt) {
+        return res.status(400).send({ error: 'encryptedCreatedAt is required.' });
+    }
 
     // Add the creator to the participants list if not already there
     if (!participantIds.includes(req.user._id.toString())) {
@@ -21,6 +25,9 @@ exports.createConversation = asyncHandler(async (req, res) => {
         name, // Opaque data from client
         participants, // Opaque data from client
         participantIds, // Plaintext IDs for server logic
+        createdAt: encryptedCreatedAt,
+        lastMessageAt: encryptedCreatedAt, // Initially, last message time is creation time
+        conversationKey, // Encrypted conversation key
     });
     await conversation.save();
 
@@ -39,10 +46,9 @@ exports.createConversation = asyncHandler(async (req, res) => {
  * @access Private
  */
 exports.getConversations = asyncHandler(async (req, res) => {
-    const user = await User.findById(req.user._id).populate({
-        path: 'conversations',
-        options: { sort: { 'lastMessageAt': -1 } }
-    });
+    const user = await User.findById(req.user._id).populate('conversations');
+    // Sorting by 'lastMessageAt' is no longer possible on the server,
+    // as the field is encrypted. The client is now responsible for sorting.
     res.send(user.conversations);
 });
 
