@@ -6,15 +6,12 @@ const ConversationSchema = new mongoose.Schema({
         enum: ['private', 'group'],
         default: 'private'
     },
-    encrypted_participants: [{
-        type: String
+    participants: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
     }],
     encrypted_name: {
         type: String
-    },
-    conversationKey: {
-        type: String,
-        required: true
     },
     createdAt: {
         type: Date,

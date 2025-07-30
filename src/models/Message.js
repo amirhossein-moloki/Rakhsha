@@ -6,7 +6,14 @@ const MessageSchema = new mongoose.Schema({
         ref: 'Conversation',
         required: true
     },
-    senderId: {
+    // The senderId is now encrypted with the recipient's public key.
+    // The server cannot know who the sender is.
+    encryptedSenderId: {
+        type: String,
+        required: true
+    },
+    // We still need to know the recipient to route the message.
+    recipientId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
@@ -21,6 +28,10 @@ const MessageSchema = new mongoose.Schema({
         trim: true
     },
     edited: {
+        type: Boolean,
+        default: false
+    },
+    hidden: {
         type: Boolean,
         default: false
     },

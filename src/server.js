@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { generateSymmetricKey, encryptSymmetric } = require('./utils/crypto');
 const Message = require('./models/Message');
 const Conversation = require('./models/Conversation');
+const Session = require('./models/Session');
 
 const PORT = process.env.PORT || 3000;
 
@@ -22,48 +23,60 @@ io.on('connection', (socket) => {
     });
 
     socket.on('send_message', async (data) => {
-        const { conversationId, senderId, content } = data;
+        const { conversationId, recipientId, encryptedSenderId, content, senderId_for_auth } = data;
 
-        const conversation = await Conversation.findById(conversationId);
-        if (!conversation) {
-            // Handle error: conversation not found
+        // The senderId_for_auth is a concession for session key retrieval.
+        // In a true sealed sender model, the session key might be derived differently.
+        const session = await Session.findOne({ conversationId, userId: senderId_for_auth });
+        if (!session) {
+            socket.emit('error', { message: 'No active session. Cannot send message.' });
             return;
         }
 
-        const encrypted_content = encryptSymmetric(content, conversation.conversationKey);
+        const encrypted_content = encryptSymmetric(content, session.sessionKey);
+
+        const redis = require('redis');
+        const client = redis.createClient();
+        await client.connect();
+        const hiddenMode = await client.get(`hidden_mode:${senderId_for_auth}`);
+        await client.disconnect();
 
         const message = new Message({
             conversationId,
-            senderId,
-            encrypted_content
+            recipientId,
+            encryptedSenderId,
+            encrypted_content,
+            hidden: hiddenMode === 'true'
         });
         await message.save();
 
-        // For consistency with getMessages, we can send back the decrypted message
-        const messageData = message.toObject();
-        messageData.content = content;
-        delete messageData.encrypted_content;
-
-        io.to(conversationId).emit('receive_message', messageData);
+        // The message is broadcast, but only the intended recipient can decrypt the sender.
+        io.to(conversationId).emit('receive_message', message.toObject());
     });
 
     socket.on('edit_message', async (data) => {
         try {
-            const message = await Message.findById(data.messageId);
-            if (message) {
-                const conversation = await Conversation.findById(message.conversationId);
-                if (conversation) {
-                    message.encrypted_content = encryptSymmetric(data.content, conversation.conversationKey);
-                    message.edited = true;
-                    await message.save();
+            const { messageId, content, userId } = data; // userId is the plaintext user for auth
+            const message = await Message.findById(messageId);
+            if (!message) return;
 
-                    const messageData = message.toObject();
-                    messageData.content = data.content;
-                    delete messageData.encrypted_content;
+            // This is tricky. The server doesn't know the sender.
+            // The client would have to provide proof of ownership.
+            // For now, we'll trust the client and assume the check happens on the client-side
+            // before sending the event. This is NOT secure for a real app.
+            // A better way would be to sign the request.
 
-                    io.to(message.conversationId.toString()).emit('message_edited', messageData);
-                }
+            const session = await Session.findOne({ conversationId: message.conversationId, userId });
+            if (!session) {
+                socket.emit('error', { message: 'No active session. Cannot edit message.' });
+                return;
             }
+
+            message.encrypted_content = encryptSymmetric(content, session.sessionKey);
+            message.edited = true;
+            await message.save();
+
+            io.to(message.conversationId.toString()).emit('message_edited', message.toObject());
         } catch (error) {
             console.error('Failed to edit message:', error);
         }
@@ -79,6 +92,42 @@ io.on('connection', (socket) => {
             }
         } catch (error) {
             console.error('Failed to delete message:', error);
+        }
+    });
+
+    socket.on('message_read', async (data) => {
+        const { messageId, userId } = data; // userId is the person who read the message
+        const message = await Message.findById(messageId).populate('senderId');
+        if (!message) return;
+
+        const redis = require('redis');
+        const client = redis.createClient();
+        await client.connect();
+
+        try {
+            // Check if the recipient (the person who just read the message) is in hidden mode.
+            const hiddenMode = await client.get(`hidden_mode:${userId}`);
+            if (hiddenMode === 'true') {
+                // If the reader is in hidden mode, do not update the read receipt.
+                // Optionally, inform the reader's client that the receipt was suppressed.
+                socket.emit('receipt_suppressed', { messageId });
+                return;
+            }
+
+            // Also check if the sender wishes to not receive read receipts (optional feature)
+            // For now, we only care about the reader's status.
+
+            if (!message.readBy.includes(userId)) {
+                message.readBy.push(userId);
+                await message.save();
+                // Notify the conversation that the message has been read.
+                // Specifically, notify the sender.
+                io.to(message.conversationId.toString()).emit('message_updated', message.toObject());
+            }
+        } catch (error) {
+            console.error('Failed to process read receipt:', error);
+        } finally {
+            await client.disconnect();
         }
     });
 

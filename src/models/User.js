@@ -17,6 +17,14 @@ const UserSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    publicKey: {
+        type: String, // For RSA public key
+        required: false // Should be required in a real app after initial setup
+    },
+    ecdhPublicKey: {
+        type: String, // For ECDH public key
+        required: false // Should be required for messaging
+    },
     profilePictureUrl: {
         type: String,
         default: ''

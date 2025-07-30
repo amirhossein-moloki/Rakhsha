@@ -48,11 +48,31 @@ const decryptSymmetric = (encryptedData, key) => {
 };
 
 
+const generateEcdhKeyPair = () => {
+    const ecdh = crypto.createECDH('secp256k1');
+    ecdh.generateKeys();
+    return {
+        publicKey: ecdh.getPublicKey('hex'),
+        privateKey: ecdh.getPrivateKey('hex')
+    };
+};
+
+const computeSharedSecret = (privateKey, otherPublicKey) => {
+    const ecdh = crypto.createECDH('secp256k1');
+    ecdh.setPrivateKey(privateKey, 'hex');
+    const sharedSecret = ecdh.computeSecret(otherPublicKey, 'hex', 'hex');
+    // It's a good practice to hash the shared secret to derive a key
+    return crypto.createHash('sha256').update(sharedSecret).digest('hex').substring(0, 64); // 256-bit key
+};
+
+
 module.exports = {
     generateKeyPair,
     encryptWithPublicKey,
     decryptWithPrivateKey,
     generateSymmetricKey,
     encryptSymmetric,
-    decryptSymmetric
+    decryptSymmetric,
+    generateEcdhKeyPair,
+    computeSharedSecret
 };
