@@ -20,6 +20,24 @@ const onlineUsers = {};
 io.on('connection', (socket) => {
     console.log('a user connected');
 
+    // Start a timer to disconnect the client if they don't send padding
+    const setPaddingTimeout = () => {
+        // Clear any existing timer
+        if (socket.paddingTimeout) {
+            clearTimeout(socket.paddingTimeout);
+        }
+
+        // Set a new timer
+        socket.paddingTimeout = setTimeout(() => {
+            // Disconnect the client if they fail to send padding in time
+            console.log(`Disconnecting client ${socket.id} for not sending cover traffic.`);
+            socket.disconnect(true);
+        }, 5000); // 5-second timeout
+    };
+
+    // Set the initial timer when the client connects
+    setPaddingTimeout();
+
     socket.on('join_conversation', (conversationId) => {
         socket.join(conversationId);
     });
@@ -92,35 +110,53 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
+        // Clear the padding timeout timer to prevent memory leaks
+        if (socket.paddingTimeout) {
+            clearTimeout(socket.paddingTimeout);
+        }
+
         if (socket.userId) {
             delete onlineUsers[socket.userId];
             io.emit('user_offline', socket.userId);
         }
         console.log('user disconnected');
     });
+
+    // Handle client-side padding traffic
+    socket.on('client_padding', (data) => {
+        // The client has sent cover traffic. Reset the disconnect timer.
+        setPaddingTimeout();
+    });
 });
 
 const redis = require('redis');
 
-// Create a reusable Redis client
-const redisClient = redis.createClient({
-    // Assuming Redis is running on localhost:6379.
-    // In a real production environment, this would come from env variables.
-});
-redisClient.on('error', (err) => console.log('Redis Client Error', err));
-redisClient.connect();
+let redisClient;
 
-const PADDING_PACKET_SIZE = 1024; // 1 KB
-const PADDING_INTERVAL = 1000; // 1 second
+if (process.env.NODE_ENV !== 'test') {
+    // Create a reusable Redis client
+    redisClient = redis.createClient({
+        // Assuming Redis is running on localhost:6379.
+        // In a real production environment, this would come from env variables.
+    });
+    redisClient.on('error', (err) => console.log('Redis Client Error', err));
+    redisClient.connect();
+}
+
+// Define ranges for cover traffic randomization
+const MIN_PADDING_SIZE = 512; // 0.5 KB
+const MAX_PADDING_SIZE = 2048; // 2 KB
+const MIN_PADDING_INTERVAL = 500; // 0.5 seconds
+const MAX_PADDING_INTERVAL = 2000; // 2 seconds
 
 /**
- * Sends fixed-size padding packets to all connected clients at a regular interval.
- * This creates a constant stream of traffic to obfuscate real user activity.
+ * Sends variable-size padding packets to all connected clients.
+ * This creates a dynamic stream of traffic to obfuscate real user activity.
  */
-function sendPaddingTraffic() {
+function sendPaddingTraffic(packetSize) {
     const allSockets = io.sockets.sockets;
 
-    const paddingData = crypto.randomBytes(PADDING_PACKET_SIZE);
+    const paddingData = crypto.randomBytes(packetSize);
     const fakeKey = generateSymmetricKey(); // Use a new dummy key for each broadcast
     const encryptedPadding = encryptSymmetric(paddingData.toString('hex'), fakeKey);
 
@@ -145,8 +181,19 @@ if (process.env.NODE_ENV !== 'test') {
 
     connectDB();
 
-    // Periodically send padding traffic to all clients
-    setInterval(sendPaddingTraffic, PADDING_INTERVAL);
+    // Self-adjusting timer loop for sending randomized padding traffic
+    const scheduleNextPadding = () => {
+        const interval = crypto.randomInt(MIN_PADDING_INTERVAL, MAX_PADDING_INTERVAL + 1);
+        const size = crypto.randomInt(MIN_PADDING_SIZE, MAX_PADDING_SIZE + 1);
+
+        setTimeout(() => {
+            sendPaddingTraffic(size);
+            scheduleNextPadding(); // Schedule the next one
+        }, interval);
+    };
+
+    // Start the padding loop
+    scheduleNextPadding();
 
     server.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);

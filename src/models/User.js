@@ -17,6 +17,10 @@ const UserSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    secondaryPasswordHash: {
+        type: String,
+        select: false // Do not include by default in queries
+    },
     // For E2EE Key Exchange (X3DH)
     identityKey: { // Long-term public identity key
         type: String,

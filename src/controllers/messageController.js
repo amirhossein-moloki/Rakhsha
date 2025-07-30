@@ -14,31 +14,31 @@ exports.sendMessage = asyncHandler(async (req, res) => {
         return res.status(400).send({ error: 'conversationId, recipientId, ciphertextPayload, and encryptedTimestamp are required.' });
     }
 
-    // 1. Find the conversation
-    const conversation = await Conversation.findById(conversationId);
-    if (!conversation) {
-        return res.status(404).send({ error: 'Conversation not found.' });
-    }
-
-    // 2. Authorize that the sender is part of the conversation
-    if (!conversation.participantIds.map(id => id.toString()).includes(req.user._id.toString())) {
+    // 1. Authorize that the sender is part of the conversation using the new model.
+    if (!req.user.conversations.map(id => id.toString()).includes(conversationId)) {
         return res.status(403).send({ error: 'Forbidden: You are not a participant in this conversation.' });
     }
 
-    // 3. Create the new message. Note we are NOT saving the senderId.
-    const message = new Message({
+    // 2. Create the new message object. Note we are NOT saving the senderId.
+    const messageData = {
         conversationId,
-        // senderId is intentionally omitted for Sealed Sender.
         recipientId,
         messageType,
-        ciphertextPayload
-    });
+        ciphertextPayload,
+    };
+
+    // Advanced Disappearing Messages: Set expiration if requested by the client.
+    const { expiresInSeconds } = req.body;
+    if (expiresInSeconds && Number.isInteger(expiresInSeconds) && expiresInSeconds > 0) {
+        messageData.expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
+    }
+
+    const message = new Message(messageData);
 
     await message.save();
 
     // 4. Update the conversation's lastMessageAt timestamp
-    conversation.lastMessageAt = encryptedTimestamp;
-    await conversation.save();
+    await Conversation.findByIdAndUpdate(conversationId, { lastMessageAt: encryptedTimestamp });
 
     // 5. Notify the recipient via WebSocket in real-time
     const io = req.app.get('socketio');
@@ -67,8 +67,8 @@ exports.markMessageAsRead = asyncHandler(async (req, res) => {
     }
 
     // To mark a message as read, the user must be a participant in the conversation.
-    const conversation = await Conversation.findById(message.conversationId);
-    if (!conversation || !conversation.participantIds.map(id => id.toString()).includes(userId.toString())) {
+    // We use the new authorization model to verify this.
+    if (!req.user.conversations.map(id => id.toString()).includes(message.conversationId.toString())) {
         return res.status(403).send({ error: 'Forbidden: You are not a participant in this conversation.' });
     }
 

@@ -13,7 +13,8 @@ const auth = async (req, res, next) => {
         }
 
         req.token = token;
-        req.user = user;
+        req.user = user; // The full user document for backward compatibility
+        req.auth = decoded; // The decoded token payload for new features
         next();
     } catch (error) {
         res.status(401).send({ error: 'Please authenticate.' });

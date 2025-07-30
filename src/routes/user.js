@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { uploadKeys, getKeysForUser, getUserFingerprint, updateUserSettings } = require('../controllers/userController');
+const { uploadKeys, getKeysForUser, getUserFingerprint, updateUserSettings, setSecondaryPassword } = require('../controllers/userController');
 const authMiddleware = require('../middleware/auth');
 
 // All routes in this file are protected
 router.use(authMiddleware);
+
+// Route to set or update the secondary password for hidden mode
+router.post('/secondary-password', setSecondaryPassword);
 
 // Route to update user settings
 router.put('/settings', updateUserSettings);
