@@ -46,10 +46,21 @@ exports.createConversation = asyncHandler(async (req, res) => {
  * @access Private
  */
 exports.getConversations = asyncHandler(async (req, res) => {
-    const user = await User.findById(req.user._id).populate('conversations');
-    // Sorting by 'lastMessageAt' is no longer possible on the server,
-    // as the field is encrypted. The client is now responsible for sorting.
-    res.send(user.conversations);
+    // req.auth is populated by the auth middleware with the token payload
+    const userId = req.auth.userId;
+    const inSecretMode = req.auth.secretMode === true;
+
+    // Build the query to find conversations where the user is a participant
+    // and the hidden status matches their current mode.
+    const query = {
+        participantIds: userId,
+        isHidden: inSecretMode
+    };
+
+    const conversations = await Conversation.find(query);
+
+    // The client is responsible for sorting, as lastMessageAt is encrypted.
+    res.send(conversations);
 });
 
 /**
@@ -72,4 +83,48 @@ exports.getMessages = asyncHandler(async (req, res) => {
 
     const messages = await Message.find({ conversationId });
     res.send(messages); // Send raw message objects; client will decrypt
+});
+
+// Helper function to avoid code duplication for hiding/unhiding
+const updateHiddenState = async (conversationId, userId, isHidden) => {
+    const conversation = await Conversation.findById(conversationId);
+
+    if (!conversation) {
+        throw { statusCode: 404, message: 'Conversation not found' };
+    }
+
+    // Authorize: Check if the user is a participant
+    if (!conversation.participantIds.map(id => id.toString()).includes(userId.toString())) {
+        throw { statusCode: 403, message: 'Forbidden: You are not a participant of this conversation.' };
+    }
+
+    conversation.isHidden = isHidden;
+    await conversation.save();
+    return conversation;
+};
+
+/**
+ * @description Hide a conversation
+ * @route POST /api/conversations/:conversationId/hide
+ * @access Private
+ */
+exports.hideConversation = asyncHandler(async (req, res) => {
+    const { conversationId } = req.params;
+    const userId = req.auth.userId; // Use req.auth from middleware
+
+    await updateHiddenState(conversationId, userId, true);
+    res.status(200).send({ message: 'Conversation hidden successfully.' });
+});
+
+/**
+ * @description Unhide a conversation
+ * @route POST /api/conversations/:conversationId/unhide
+ * @access Private
+ */
+exports.unhideConversation = asyncHandler(async (req, res) => {
+    const { conversationId } = req.params;
+    const userId = req.auth.userId; // Use req.auth from middleware
+
+    await updateHiddenState(conversationId, userId, false);
+    res.status(200).send({ message: 'Conversation unhidden successfully.' });
 });

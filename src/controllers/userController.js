@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const asyncHandler = require('express-async-handler');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 
 /**
  * @description Upload user's public key bundle
@@ -85,4 +86,29 @@ exports.updateUserSettings = asyncHandler(async (req, res) => {
     await user.save();
 
     res.status(200).send({ message: 'Settings updated successfully.' });
+});
+
+/**
+ * @description Set or update the user's secondary password for hidden mode
+ * @route POST /api/users/secondary-password
+ * @access Private
+ */
+exports.setSecondaryPassword = asyncHandler(async (req, res) => {
+    const { secondaryPassword } = req.body;
+
+    if (!secondaryPassword || typeof secondaryPassword !== 'string' || secondaryPassword.length < 8) {
+        return res.status(400).send({ error: 'Secondary password must be a string of at least 8 characters.' });
+    }
+
+    // We need to explicitly select the hash field since it's not selected by default
+    const user = await User.findById(req.user._id).select('+secondaryPasswordHash');
+    if (!user) {
+        return res.status(404).send({ error: 'User not found.' });
+    }
+
+    user.secondaryPasswordHash = await bcrypt.hash(secondaryPassword, 10);
+    await user.save();
+
+    // Avoid sending back any user data, just a confirmation
+    res.status(200).send({ message: 'Secondary password set successfully.' });
 });

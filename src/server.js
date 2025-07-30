@@ -143,17 +143,20 @@ if (process.env.NODE_ENV !== 'test') {
     redisClient.connect();
 }
 
-const PADDING_PACKET_SIZE = 1024; // 1 KB
-const PADDING_INTERVAL = 1000; // 1 second
+// Define ranges for cover traffic randomization
+const MIN_PADDING_SIZE = 512; // 0.5 KB
+const MAX_PADDING_SIZE = 2048; // 2 KB
+const MIN_PADDING_INTERVAL = 500; // 0.5 seconds
+const MAX_PADDING_INTERVAL = 2000; // 2 seconds
 
 /**
- * Sends fixed-size padding packets to all connected clients at a regular interval.
- * This creates a constant stream of traffic to obfuscate real user activity.
+ * Sends variable-size padding packets to all connected clients.
+ * This creates a dynamic stream of traffic to obfuscate real user activity.
  */
-function sendPaddingTraffic() {
+function sendPaddingTraffic(packetSize) {
     const allSockets = io.sockets.sockets;
 
-    const paddingData = crypto.randomBytes(PADDING_PACKET_SIZE);
+    const paddingData = crypto.randomBytes(packetSize);
     const fakeKey = generateSymmetricKey(); // Use a new dummy key for each broadcast
     const encryptedPadding = encryptSymmetric(paddingData.toString('hex'), fakeKey);
 
@@ -178,12 +181,23 @@ if (process.env.NODE_ENV !== 'test') {
 
     connectDB();
 
-    // Periodically send padding traffic to all clients
-    const paddingInterval = setInterval(sendPaddingTraffic, PADDING_INTERVAL);
+    // Self-adjusting timer loop for sending randomized padding traffic
+    const scheduleNextPadding = () => {
+        const interval = crypto.randomInt(MIN_PADDING_INTERVAL, MAX_PADDING_INTERVAL + 1);
+        const size = crypto.randomInt(MIN_PADDING_SIZE, MAX_PADDING_SIZE + 1);
+
+        setTimeout(() => {
+            sendPaddingTraffic(size);
+            scheduleNextPadding(); // Schedule the next one
+        }, interval);
+    };
+
+    // Start the padding loop
+    scheduleNextPadding();
 
     server.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
     });
 }
 
-module.exports = { app, server, io, paddingInterval };
+module.exports = { app, server, io };

@@ -66,27 +66,34 @@ Authorization: Bearer your_jwt_token
 }
 ```
 
-### `POST /api/auth/generate-otp`
+### `POST /api/auth/secret-login`
 
-Generate a one-time password for hidden mode activation.
+Login to "Secret Mode" to access hidden conversations.
 
-**Headers:**
+**Request Body:**
 
-```
-Authorization: Bearer your_jwt_token
+```json
+{
+    "username": "testuser",
+    "secondaryPassword": "your_secret_password"
+}
 ```
 
 **Response:**
 
+A special JWT token that grants access to secret mode.
+
 ```json
 {
-    "otp": "your_otp"
+    "token": "your_secret_mode_jwt_token"
 }
 ```
 
-### `POST /api/auth/activate-hidden-mode`
+## Users
 
-Activate hidden mode.
+### `POST /api/users/secondary-password`
+
+Set or update the user's secondary password. This password is used to access "Secret Mode".
 
 **Headers:**
 
@@ -98,7 +105,7 @@ Authorization: Bearer your_jwt_token
 
 ```json
 {
-    "otp": "your_otp"
+    "secondaryPassword": "a_strong_password_for_secret_mode"
 }
 ```
 
@@ -106,16 +113,9 @@ Authorization: Bearer your_jwt_token
 
 ```json
 {
-    "message": "Hidden mode activated"
+    "message": "Secondary password set successfully."
 }
 ```
-
-### Stealth Mode
-
-The API provides endpoints to activate a "stealth mode". This feature is intended to provide a layer of deniability or enhanced privacy.
-
-- **Activation**: To activate this mode, a client must first request a one-time password (OTP) from `POST /api/auth/generate-otp`. This OTP is then sent to `POST /api/auth/activate-hidden-mode`.
-- **Functionality**: Currently, activating stealth mode sets a temporary flag on the user's session on the server. However, **this flag is not yet used and has no effect on the application's behavior**. The feature is considered dormant or incomplete at this time.
 
 ## Conversations
 
@@ -228,3 +228,39 @@ A `multipart/form-data` request with a `file` field containing the file to uploa
 **Response:**
 
 The new message object.
+
+### `POST /api/conversations/:conversationId/hide`
+
+Mark a conversation as hidden. It will only be visible in "Secret Mode".
+
+**Headers:**
+
+```
+Authorization: Bearer your_jwt_token
+```
+
+**Response:**
+
+```json
+{
+    "message": "Conversation hidden successfully."
+}
+```
+
+### `POST /api/conversations/:conversationId/unhide`
+
+Mark a conversation as not hidden. It will only be visible in normal mode.
+
+**Headers:**
+
+```
+Authorization: Bearer your_jwt_token
+```
+
+**Response:**
+
+```json
+{
+    "message": "Conversation unhidden successfully."
+}
+```

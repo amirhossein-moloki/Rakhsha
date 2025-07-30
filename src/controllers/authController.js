@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 
 exports.register = async (req, res) => {
     try {
@@ -51,14 +52,47 @@ exports.login = async (req, res) => {
     }
 };
 
+exports.secretLogin = async (req, res) => {
+    try {
+        const { username, secondaryPassword } = req.body;
+        if (!username || !secondaryPassword) {
+            return res.status(400).send({ error: 'Username and secondary password are required' });
+        }
+
+        const user = await User.findOne({ username }).select('+secondaryPasswordHash');
+        if (!user || !user.secondaryPasswordHash) {
+            // We use a generic error message to avoid revealing whether a user exists or has a secondary password.
+            return res.status(401).send({ error: 'Invalid credentials' });
+        }
+
+        const isMatch = await bcrypt.compare(secondaryPassword, user.secondaryPasswordHash);
+        if (!isMatch) {
+            return res.status(401).send({ error: 'Invalid credentials' });
+        }
+
+        // The token payload now includes a `secretMode` flag
+        const token = jwt.sign(
+            { userId: user._id, secretMode: true },
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
+
+        res.send({ token });
+    } catch (error) {
+        res.status(400).send({ error: 'Failed to login to secret mode' });
+    }
+};
+
 exports.getMe = async (req, res) => {
     try {
-        const user = await User.findById(req.user._id);
+        // req.user is populated by the authMiddleware from the token
+        const user = await User.findById(req.user.userId);
         if (!user) {
             return res.status(404).send({ error: 'User not found' });
         }
         res.send(user);
     } catch (error) {
-        res.status(401).send({ error: 'Please authenticate' });
+        // This part is likely unreachable if authMiddleware succeeds, but good for safety
+        res.status(500).send({ error: 'An error occurred while fetching user data.' });
     }
 };
