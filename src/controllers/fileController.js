@@ -1,0 +1,94 @@
+const File = require('../models/File');
+const Conversation = require('../models/Conversation');
+const asyncHandler = require('express-async-handler');
+const multer = require('multer');
+const path = require('path');
+const crypto = require('crypto');
+const fs = require('fs');
+
+// Use memory storage to handle the file as a buffer
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage, limits: { fileSize: 25 * 1024 * 1024 } }).single('file'); // 25MB limit
+
+/**
+ * @description Upload an encrypted file
+ * @route POST /api/files/upload
+ * @access Private
+ */
+exports.uploadFile = [
+    upload,
+    asyncHandler(async (req, res) => {
+        if (!req.file) {
+            return res.status(400).send({ error: 'No file uploaded.' });
+        }
+
+        const { conversationId, encryptedFilename, encryptedKeyInfo } = req.body;
+        if (!conversationId || !encryptedFilename || !encryptedKeyInfo) {
+            return res.status(400).send({ error: 'conversationId, encryptedFilename, and encryptedKeyInfo are required.' });
+        }
+
+        const conversation = await Conversation.findById(conversationId);
+        if (!conversation) {
+            return res.status(404).send({ error: 'Conversation not found.' });
+        }
+
+        // Authorize: Check if the user is a participant
+        if (!conversation.participantIds.map(id => id.toString()).includes(req.user._id.toString())) {
+            return res.status(403).send({ error: 'Forbidden: You are not a participant in this conversation.' });
+        }
+
+        // Generate a random filename for storage to prevent metadata leakage
+        const storageFilename = crypto.randomBytes(16).toString('hex') + path.extname(req.file.originalname);
+        const storagePath = path.join('uploads', storageFilename);
+
+        // Ensure the uploads directory exists
+        if (!fs.existsSync('uploads')) {
+            fs.mkdirSync('uploads');
+        }
+
+        // Save the encrypted buffer to disk
+        fs.writeFileSync(storagePath, req.file.buffer);
+
+        const newFile = new File({
+            conversationId,
+            uploaderId: req.user._id,
+            storagePath,
+            encryptedFilename,
+            mimetype: req.file.mimetype,
+            size: req.file.size,
+            encryptedKeyInfo
+        });
+
+        await newFile.save();
+
+        // Note: The client would typically send a message in the chat to notify
+        // others about this new file, including the file ID and decryption key info.
+        res.status(201).send(newFile);
+    })
+];
+
+/**
+ * @description Download an encrypted file
+ * @route GET /api/files/:fileId
+ * @access Private
+ */
+exports.downloadFile = asyncHandler(async (req, res) => {
+    const { fileId } = req.params;
+    const file = await File.findById(fileId);
+
+    if (!file) {
+        return res.status(404).send({ error: 'File not found.' });
+    }
+
+    const conversation = await Conversation.findById(file.conversationId);
+    if (!conversation) {
+        return res.status(404).send({ error: 'Associated conversation not found.' });
+    }
+
+    // Authorize: Check if the user is a participant
+    if (!conversation.participantIds.map(id => id.toString()).includes(req.user._id.toString())) {
+        return res.status(403).send({ error: 'Forbidden: You are not a participant in this conversation.' });
+    }
+
+    res.download(file.storagePath); // Stream the encrypted file to the client
+});

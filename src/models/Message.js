@@ -6,26 +6,27 @@ const MessageSchema = new mongoose.Schema({
         ref: 'Conversation',
         required: true
     },
-    senderId: {
+    senderId: { // For Sealed Sender, this is optional. The sender is in the ciphertext.
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    recipientId: { // The recipient of this specific message
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
     },
-    contentType: {
+    messageType: { // e.g., 'prekey' for the first message, 'normal' for subsequent ones
         type: String,
-        enum: ['text', 'image'],
-        default: 'text'
+        required: true,
+        default: 'normal'
     },
-    encrypted_content: {
+    ciphertextPayload: { // The opaque E2EE payload
         type: String,
-        trim: true
+        required: true
     },
     edited: {
         type: Boolean,
         default: false
-    },
-    encrypted_mediaUrl: {
-        type: String
     },
     timestamp: {
         type: Date,
