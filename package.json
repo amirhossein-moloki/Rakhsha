@@ -20,6 +20,7 @@
   "homepage": "https://github.com/amirhossein-moloki/Rakhsha#readme",
   "dependencies": {
     "argon2": "^0.40.3",
+    "axios": "^1.7.2",
     "crypto-js": "^4.2.0",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",

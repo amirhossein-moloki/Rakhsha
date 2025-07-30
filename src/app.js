@@ -15,6 +15,7 @@ const conversationRoutes = require('./routes/conversations');
 const userRoutes = require('./routes/user');
 const messageRoutes = require('./routes/message');
 const fileRoutes = require('./routes/file');
+const nodeRoutes = require('./routes/node');
 
 app.get('/', (req, res) => {
     res.send('Hello World!');
@@ -25,6 +26,7 @@ app.use('/api/conversations', conversationRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/files', fileRoutes);
+app.use('/api/nodes', nodeRoutes);
 
 const errorHandler = require('./middleware/errorHandler');
 app.use(errorHandler);
