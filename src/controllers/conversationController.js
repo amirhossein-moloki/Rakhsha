@@ -1,8 +1,10 @@
 const Conversation = require('../models/Conversation');
-const SecretConversation = require('../models/SecretConversation');
 const Message = require('../models/Message');
-const { generateKey, encrypt } = require('../utils/crypto');
+const User = require('../models/User');
+const { generateSymmetricKey, encryptSymmetric, decryptSymmetric } = require('../utils/crypto');
 const asyncHandler = require('express-async-handler');
+const multer = require('multer');
+const path = require('path');
 
 /**
  * @description Create a new conversation
@@ -11,36 +13,31 @@ const asyncHandler = require('express-async-handler');
  */
 exports.createConversation = asyncHandler(async (req, res) => {
     const { type, participants, name } = req.body;
+    const conversationKey = generateSymmetricKey();
+
+    // Add the creator to the participants list
+    if (!participants.includes(req.user._id.toString())) {
+        participants.push(req.user._id.toString());
+    }
+
+    const encrypted_name = encryptSymmetric(name, conversationKey);
+    const encrypted_participants = participants.map(p => encryptSymmetric(p, conversationKey));
+
     const conversation = new Conversation({
         type,
-        participants,
-        name
-    });
-    await conversation.save();
-    res.status(201).send(conversation);
-});
-
-/**
- * @description Create a new secret conversation
- * @route POST /api/conversations/secret
- * @access Private
- */
-exports.createSecretConversation = asyncHandler(async (req, res) => {
-    const { type, participants, name } = req.body;
-    const conversationKey = generateKey();
-
-    const encrypted_participants = participants.map(p => encrypt(p, conversationKey));
-    const encrypted_name = encrypt(name, conversationKey);
-
-    const secretConversation = new SecretConversation({
-        type,
-        encrypted_participants,
         encrypted_name,
+        encrypted_participants,
         conversationKey
     });
+    await conversation.save();
 
-    await secretConversation.save();
-    res.status(201).send(secretConversation);
+    // Add conversation to each participant's user object
+    await User.updateMany(
+        { _id: { $in: participants } },
+        { $push: { conversations: conversation._id } }
+    );
+
+    res.status(201).send(conversation);
 });
 
 /**
@@ -49,12 +46,21 @@ exports.createSecretConversation = asyncHandler(async (req, res) => {
  * @access Private
  */
 exports.getConversations = asyncHandler(async (req, res) => {
-    const conversations = await Conversation.find({ participants: req.user._id });
-    res.send(conversations);
+    const user = await User.findById(req.user._id).populate('conversations');
+    const decryptedConversations = user.conversations.map(convo => {
+        const decrypted_name = decryptSymmetric(convo.encrypted_name, convo.conversationKey);
+        const decrypted_participants = convo.encrypted_participants.map(p => decryptSymmetric(p, convo.conversationKey));
+        return {
+            _id: convo._id,
+            type: convo.type,
+            name: decrypted_name,
+            participants: decrypted_participants,
+            createdAt: convo.createdAt,
+            lastMessageAt: convo.lastMessageAt
+        };
+    });
+    res.send(decryptedConversations);
 });
-
-const SecretMessage = require('../models/SecretMessage');
-const redis = require('redis');
 
 /**
  * @description Get all messages for a conversation
@@ -62,13 +68,33 @@ const redis = require('redis');
  * @access Private
  */
 exports.getMessages = asyncHandler(async (req, res) => {
-    const messages = await Message.find({ conversationId: req.params.conversationId });
-    res.send(messages);
-});
+    const { conversationId } = req.params;
+    const conversation = await Conversation.findById(conversationId);
 
-const { decrypt } = require('../utils/crypto');
-const multer = require('multer');
-const path = require('path');
+    if (!conversation) {
+        return res.status(404).send({ error: 'Conversation not found' });
+    }
+
+    // Check if the user is a participant of the conversation
+    const decrypted_participants = conversation.encrypted_participants.map(p => decryptSymmetric(p, conversation.conversationKey));
+    if (!decrypted_participants.includes(req.user._id.toString())) {
+        return res.status(403).send({ error: 'Forbidden' });
+    }
+
+    const messages = await Message.find({ conversationId });
+    const decryptedMessages = messages.map(msg => {
+        const decrypted_content = msg.encrypted_content ? decryptSymmetric(msg.encrypted_content, conversation.conversationKey) : '';
+        const decrypted_mediaUrl = msg.encrypted_mediaUrl ? decryptSymmetric(msg.encrypted_mediaUrl, conversation.conversationKey) : '';
+        return {
+            ...msg.toObject(),
+            content: decrypted_content,
+            mediaUrl: decrypted_mediaUrl,
+            encrypted_content: undefined,
+            encrypted_mediaUrl: undefined
+        };
+    });
+    res.send(decryptedMessages);
+});
 
 const storage = multer.diskStorage({
     destination: './uploads/',
@@ -78,7 +104,8 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({
-    storage: storage
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 }).single('file');
 
 
@@ -90,6 +117,9 @@ const upload = multer({
 exports.sendFile = (req, res, next) => {
     upload(req, res, asyncHandler(async (err) => {
         if (err) {
+            if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).send({ error: 'File size limit exceeded. Max size is 10MB.' });
+            }
             return res.status(400).send({ error: 'Failed to upload file' });
         }
         if (!req.file) {
@@ -97,53 +127,24 @@ exports.sendFile = (req, res, next) => {
         }
 
         const { conversationId } = req.body;
+        const conversation = await Conversation.findById(conversationId);
+        if (!conversation) {
+            return res.status(404).send({ error: 'Conversation not found' });
+        }
+
+        const encrypted_mediaUrl = encryptSymmetric(req.file.path, conversation.conversationKey);
+
         const message = new Message({
             conversationId,
             senderId: req.user._id,
-            contentType: 'image', // This can be improved to handle different file types
-            mediaUrl: req.file.path
+            contentType: req.file.mimetype, // Use the file's MIME type
+            encrypted_mediaUrl
         });
 
         await message.save();
         res.send(message);
     }));
 };
-
-/**
- * @description Get all secret messages for a conversation
- * @route GET /api/conversations/:conversationId/secret-messages
- * @access Private
- */
-exports.getSecretMessages = asyncHandler(async (req, res) => {
-    const client = redis.createClient();
-    await client.connect();
-
-    try {
-        const isHidden = await client.get(`hidden_mode:${req.user._id}`);
-
-        if (isHidden) {
-            const conversation = await SecretConversation.findById(req.params.conversationId);
-            if (conversation) {
-                const messages = await SecretMessage.find({ conversationId: req.params.conversationId });
-                const decryptedMessages = messages.map(msg => {
-                    return {
-                        ...msg.toObject(),
-                        content: decrypt(msg.content, conversation.conversationKey)
-                    };
-                });
-                res.send(decryptedMessages);
-            } else {
-                res.status(404).send({ error: 'Secret conversation not found' });
-            }
-        } else {
-            res.status(403).send({ error: 'Forbidden' });
-        }
-    } finally {
-        if (client.isOpen) {
-            await client.disconnect();
-        }
-    }
-});
 
 /**
  * @description Edit a message
@@ -162,7 +163,12 @@ exports.editMessage = asyncHandler(async (req, res) => {
         return res.status(403).send({ error: 'Forbidden' });
     }
 
-    message.content = content;
+    const conversation = await Conversation.findById(message.conversationId);
+    if (!conversation) {
+        return res.status(404).send({ error: 'Conversation not found' });
+    }
+
+    message.encrypted_content = encryptSymmetric(content, conversation.conversationKey);
     message.edited = true;
     await message.save();
     res.send(message);
