@@ -1,15 +1,44 @@
 version: '3.8'
+
 services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/rakhsha
+      - JWT_SECRET=${JWT_SECRET}
+      - SERVER_PRIVATE_KEY=${SERVER_PRIVATE_KEY}
+      - SERVER_ADDRESS=${SERVER_ADDRESS}
+      - REDIS_HOST=redis
+    depends_on:
+      - mongo
+      - redis
+    networks:
+      - rakhsha-net
+
   mongo:
     image: mongo:5.0
-    ports:
-      - '27017:27017'
+    # No ports exposed to the host machine for security.
+    # Communication happens over the internal docker network.
     volumes:
       - mongo-data:/data/db
+    networks:
+      - rakhsha-net
+
   redis:
     image: redis:alpine
+    # For local development, the port is exposed.
+    # In a production environment, this should ideally be removed
+    # and communication should only happen over the internal network.
     ports:
       - '6379:6379'
+    networks:
+      - rakhsha-net
 
 volumes:
   mongo-data:
+
+networks:
+  rakhsha-net:
+    driver: bridge

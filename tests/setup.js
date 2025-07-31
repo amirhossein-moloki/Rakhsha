@@ -22,6 +22,7 @@ module.exports.createTestUser = async (username, password) => {
     const passwordHash = await argon2.hash(password);
     return new (require('../src/models/User'))({
         username: username,
+        email: `${username}@example.com`,
         passwordHash: passwordHash,
         identityKey: 'mockIdentityKey',
         preKeyBundle: {

@@ -3,9 +3,11 @@ const connectDB = require('./config/db');
 const http = require('http');
 const { Server } = require("socket.io");
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const { generateSymmetricKey, encryptSymmetric } = require('./utils/crypto');
 const Message = require('./models/Message');
 const Conversation = require('./models/Conversation');
+const User = require('./models/User');
 
 const PORT = process.env.PORT || 3000;
 
@@ -18,6 +20,27 @@ io.attach(server);
 app.set('socketio', io);
 
 const onlineUsers = {};
+
+// WebSocket Authentication Middleware
+io.use(async (socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+        return next(new Error('Authentication error: Token not provided.'));
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.userId).select('conversations');
+        if (!user) {
+            return next(new Error('Authentication error: User not found.'));
+        }
+        socket.user = user; // Attach full user object
+        socket.userId = user._id.toString(); // Keep userId for convenience
+        next();
+    } catch (error) {
+        next(new Error('Authentication error: Invalid token.'));
+    }
+});
 
 io.on('connection', (socket) => {
     console.log('a user connected');

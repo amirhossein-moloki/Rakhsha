@@ -1,6 +1,8 @@
 const request = require('supertest');
 const app = require('../src/app');
 const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
 const User = require('../src/models/User');
 const Conversation = require('../src/models/Conversation');
 const Node = require('../src/models/Node');
@@ -8,6 +10,14 @@ const { encryptHybrid } = require('../src/utils/crypto');
 const axios = require('axios');
 
 jest.mock('axios');
+
+// This is a valid, real public key generated for the test environment.
+const testPublicKey = fs.readFileSync(path.join(__dirname, '..', 'test_public.pem'), 'utf-8');
+const testPrivateKey = fs.readFileSync(path.join(__dirname, '..', 'test_private.pem'), 'utf-8');
+
+// Set the private key in the environment for the decrypting part of the controller
+process.env.SERVER_PRIVATE_KEY = testPrivateKey;
+
 
 describe('Mix Network E2E Tests', () => {
     const { setup, teardown, createTestUser } = require('./setup');
@@ -24,9 +34,7 @@ describe('Mix Network E2E Tests', () => {
         await Node.deleteMany({});
 
         user1 = await createTestUser('user1', 'password');
-        user1.email = 'user1@example.com';
         user2 = await createTestUser('user2', 'password');
-        user2.email = 'user2@example.com';
         await user1.save();
         await user2.save();
 
@@ -45,12 +53,12 @@ describe('Mix Network E2E Tests', () => {
         node1 = new Node({
             nodeId: 'node1',
             address: 'http://node1.test.com',
-            publicKey: process.env.SERVER_PUBLIC_KEY // For simplicity, we'll use the server's key for all nodes
+            publicKey: testPublicKey
         });
         node2 = new Node({
             nodeId: 'node2',
             address: 'http://node2.test.com',
-            publicKey: process.env.SERVER_PUBLIC_KEY
+            publicKey: testPublicKey
         });
         await node1.save();
         await node2.save();
@@ -72,7 +80,7 @@ describe('Mix Network E2E Tests', () => {
             nextNodeAddress: 'self',
             remainingPayload: JSON.stringify(messagePayload)
         });
-        let onionLayer3 = encryptHybrid(finalPayload, process.env.SERVER_PUBLIC_KEY);
+        let onionLayer3 = encryptHybrid(finalPayload, testPublicKey);
 
         // Layer 2 (for node2)
         let onionLayer2Payload = JSON.stringify({
@@ -86,7 +94,7 @@ describe('Mix Network E2E Tests', () => {
             nextNodeAddress: node2.address,
             remainingPayload: onionLayer2
         });
-        let onionLayer1 = encryptHybrid(onionLayer1Payload, process.env.SERVER_PUBLIC_KEY);
+        let onionLayer1 = encryptHybrid(onionLayer1Payload, testPublicKey);
 
         // 3. Mock the axios post calls
         axios.post.mockResolvedValue({ status: 200, data: { message: 'Message forwarded.' } });
