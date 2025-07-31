@@ -23,8 +23,10 @@ describe('Mix Network E2E Tests', () => {
         await Conversation.deleteMany({});
         await Node.deleteMany({});
 
-        user1 = createTestUser('user1', 'password');
-        user2 = createTestUser('user2', 'password');
+        user1 = await createTestUser('user1', 'password');
+        user1.email = 'user1@example.com';
+        user2 = await createTestUser('user2', 'password');
+        user2.email = 'user2@example.com';
         await user1.save();
         await user2.save();
 

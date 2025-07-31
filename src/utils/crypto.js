@@ -86,26 +86,25 @@ const decryptHybrid = (encryptedData, privateKey) => {
     return decryptSymmetric(payload, symmetricKey);
 };
 
+const { ec } = require('elliptic');
+const ec_secp256k1 = new ec('secp256k1');
+
 const sign = (data, privateKey) => {
-    const signer = crypto.createSign('sha256');
-    signer.update(data);
-    signer.end();
-    return signer.sign(privateKey, 'base64');
+    const key = ec_secp256k1.keyFromPrivate(privateKey, 'hex');
+    const signature = key.sign(data);
+    return signature.toDER('hex');
 };
 
 const verify = (data, signature, publicKey) => {
-    const verifier = crypto.createVerify('sha256');
-    verifier.update(data);
-    verifier.end();
-    return verifier.verify(publicKey, signature, 'base64');
+    const key = ec_secp256k1.keyFromPublic(publicKey, 'hex');
+    return key.verify(data, signature);
 };
 
 const generateECDHKeyPair = () => {
-    const ecdh = crypto.createECDH('secp256k1');
-    ecdh.generateKeys();
+    const keyPair = ec_secp256k1.genKeyPair();
     return {
-        publicKey: ecdh.getPublicKey('base64'),
-        privateKey: ecdh.getPrivateKey('base64'),
+        publicKey: keyPair.getPublic('hex'),
+        privateKey: keyPair.getPrivate('hex'),
     };
 };
 

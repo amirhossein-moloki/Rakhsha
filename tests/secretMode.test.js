@@ -39,7 +39,8 @@ describe('Secret Mode E2E Tests', () => {
         await Conversation.deleteMany({});
 
         // Create a standard user using the helper
-        user = createTestUser('secret_tester', 'mainpassword');
+        user = await createTestUser('secret_tester', 'mainpassword');
+        user.email = 'secret_tester@example.com';
         await user.save();
 
         // Generate a standard token for the user

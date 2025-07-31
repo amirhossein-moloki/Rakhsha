@@ -10,7 +10,9 @@ const Conversation = require('./models/Conversation');
 const PORT = process.env.PORT || 3000;
 
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server();
+
+io.attach(server);
 
 // Make io accessible to our router
 app.set('socketio', io);
@@ -43,9 +45,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('send_message', async (data) => {
-        const { conversationId, senderId, content } = data;
+        console.log('--- "send_message" event received ---', data);
+        const { conversationId, senderId, recipientId, content } = data;
 
-        const conversation = await Conversation.findById(conversationId);
+        const conversation = await Conversation.findById(conversationId).select('+conversationKey');
+        console.log('Found conversation:', !!conversation);
         if (!conversation) {
             // Handle error: conversation not found
             return;
@@ -55,14 +59,15 @@ io.on('connection', (socket) => {
 
         const message = new Message({
             conversationId,
-            senderId,
-            encrypted_content
+            recipientId,
+            ciphertextPayload: encrypted_content,
         });
         await message.save();
 
         // For consistency with getMessages, we can send back the decrypted message
         const messageData = message.toObject();
         messageData.content = content;
+    messageData.senderId = senderId; // Add senderId to the broadcasted message
         delete messageData.encrypted_content;
 
         io.to(conversationId).emit('receive_message', messageData);
@@ -72,9 +77,9 @@ io.on('connection', (socket) => {
         try {
             const message = await Message.findById(data.messageId);
             if (message) {
-                const conversation = await Conversation.findById(message.conversationId);
+                const conversation = await Conversation.findById(message.conversationId).select('+conversationKey');
                 if (conversation) {
-                    message.encrypted_content = encryptSymmetric(data.content, conversation.conversationKey);
+                    message.ciphertextPayload = encryptSymmetric(data.content, conversation.conversationKey);
                     message.edited = true;
                     await message.save();
 

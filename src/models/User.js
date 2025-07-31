@@ -8,6 +8,13 @@ const UserSchema = new mongoose.Schema({
         unique: true,
         trim: true
     },
+    email: {
+        type: String,
+        required: true,
+        unique: true,
+        trim: true,
+        lowercase: true
+    },
     passwordHash: {
         type: String,
         required: true
@@ -57,10 +64,10 @@ const UserSchema = new mongoose.Schema({
 
 
 UserSchema.pre('save', async function(next) {
-    if (this.isModified('passwordHash')) {
-        this.passwordHash = await argon2.hash(this.passwordHash);
-    }
-    if (this.isModified('secondaryPasswordHash')) {
+    // The hashing is now expected to be done in the controller/service layer
+    // before saving. This hook is now only for other potential pre-save logic.
+    // We can still hash the secondary password here if it's set.
+    if (this.isModified('secondaryPasswordHash') && this.secondaryPasswordHash) {
         this.secondaryPasswordHash = await argon2.hash(this.secondaryPasswordHash);
     }
     next();

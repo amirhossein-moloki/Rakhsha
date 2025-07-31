@@ -6,9 +6,9 @@ const { generateECDHKeyPair, sign } = require('../utils/crypto');
 
 exports.register = async (req, res) => {
     try {
-        const { username, password } = req.body;
-        if (!username || !password) {
-            return res.status(400).send({ error: 'Username and password are required' });
+        const { username, email, password } = req.body;
+        if (!username || !email || !password) {
+            return res.status(400).send({ error: 'Username, email, and password are required' });
         }
 
         // 1. Generate Identity Key
@@ -30,9 +30,12 @@ exports.register = async (req, res) => {
             });
         }
 
+        const passwordHash = await argon2.hash(password);
+
         const user = new User({
             username,
-            passwordHash: password,
+            email,
+            passwordHash,
             identityKey: identityKeyPair.publicKey,
             preKeyBundle: {
                 signedPreKey: {
@@ -62,12 +65,14 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
     try {
-        const { username, password } = req.body;
-        if (!password || !username) {
-            return res.status(400).send({ error: 'Username and password are required' });
+        const { login, password } = req.body; // 'login' can be username or email
+        if (!password || !login) {
+            return res.status(400).send({ error: 'Login identifier and password are required' });
         }
 
-        const user = await User.findOne({ username });
+        const user = await User.findOne({
+            $or: [{ username: login }, { email: login }],
+        });
 
         if (!user) {
             return res.status(401).send({ error: 'Invalid credentials' });
@@ -115,15 +120,7 @@ exports.secretLogin = async (req, res) => {
 };
 
 exports.getMe = async (req, res) => {
-    try {
-        // req.user is populated by the authMiddleware from the token
-        const user = await User.findById(req.user.userId);
-        if (!user) {
-            return res.status(404).send({ error: 'User not found' });
-        }
-        res.send(user);
-    } catch (error) {
-        // This part is likely unreachable if authMiddleware succeeds, but good for safety
-        res.status(500).send({ error: 'An error occurred while fetching user data.' });
-    }
+    // The user object is already fetched and attached to the request by the auth middleware.
+    // We can just send it back.
+    res.send(req.user);
 };
