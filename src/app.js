@@ -4,7 +4,19 @@ const app = express();
 const trafficObfuscation = require('./middleware/trafficObfuscation');
 const requestPadding = require('./middleware/requestPadding');
 
-app.use(helmet());
+app.use(
+    helmet({
+        contentSecurityPolicy: {
+            directives: {
+                defaultSrc: ["'self'"],
+                scriptSrc: ["'self'"],
+                styleSrc: ["'self'"],
+                objectSrc: ["'none'"],
+                upgradeInsecureRequests: [],
+            },
+        },
+    })
+);
 app.use(express.json());
 
 // Apply traffic obfuscation middleware to all responses
@@ -12,6 +24,7 @@ app.use(trafficObfuscation);
 // Apply request padding middleware to all requests
 app.use(requestPadding);
 
+const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/auth');
 const conversationRoutes = require('./routes/conversations');
 const userRoutes = require('./routes/user');
@@ -23,7 +36,15 @@ app.get('/', (req, res) => {
     res.send('Hello World!');
 });
 
-app.use('/api/auth', authRoutes);
+// Apply rate limiting to authentication routes
+const authLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15 minutes
+	max: 100, // Limit each IP to 100 requests per window
+	standardHeaders: true,
+	legacyHeaders: false,
+});
+
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/messages', messageRoutes);

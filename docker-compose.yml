@@ -14,6 +14,8 @@ services:
     depends_on:
       - mongo
       - redis
+    volumes:
+      - uploads-data:/app/uploads
     networks:
       - rakhsha-net
 
@@ -35,6 +37,7 @@ services:
 
 volumes:
   mongo-data:
+  uploads-data:
 
 networks:
   rakhsha-net:
