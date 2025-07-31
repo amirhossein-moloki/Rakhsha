@@ -119,8 +119,8 @@ const generateECDHKeyPair = () => {
 
 const computeECDHSharedSecret = (privateKey, otherPublicKey) => {
     const ecdh = crypto.createECDH('secp256k1');
-    ecdh.setPrivateKey(privateKey, 'base64');
-    return ecdh.computeSecret(otherPublicKey, 'base64', 'hex');
+    ecdh.setPrivateKey(privateKey, 'hex');
+    return ecdh.computeSecret(otherPublicKey, 'hex', 'hex');
 };
 
 module.exports = {
