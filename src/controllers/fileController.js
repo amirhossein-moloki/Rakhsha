@@ -22,6 +22,36 @@ exports.uploadFile = [
             return res.status(400).send({ error: 'No file uploaded.' });
         }
 
+        // Use dynamic import to load the ESM-only 'file-type' module in a CommonJS file.
+        const { fileTypeFromBuffer } = await import('file-type');
+
+        // Security: Validate file type based on magic numbers, not just client-provided mimetype.
+        const detectedFileType = await fileTypeFromBuffer(req.file.buffer);
+
+        const allowedMimeTypes = [
+            'image/jpeg', 'image/png', 'image/gif',
+            'application/pdf', 'application/zip',
+            'video/mp4', 'audio/mpeg', 'text/plain'
+        ];
+
+        let isAllowed = false;
+        if (detectedFileType) {
+            // If the type is detected by magic numbers, check it against the whitelist.
+            if (allowedMimeTypes.includes(detectedFileType.mime)) {
+                isAllowed = true;
+            }
+        } else {
+            // If no type is detected (e.g., for plain text), fall back to the client-provided mimetype
+            // but ONLY for types that are known not to have magic numbers, like text/plain.
+            if (req.file.mimetype === 'text/plain') {
+                isAllowed = true;
+            }
+        }
+
+        if (!isAllowed) {
+            return res.status(400).send({ error: 'Invalid file type.' });
+        }
+
         const { conversationId, encryptedFilename, encryptedKeyInfo } = req.body;
         if (!conversationId || !encryptedFilename || !encryptedKeyInfo) {
             return res.status(400).send({ error: 'conversationId, encryptedFilename, and encryptedKeyInfo are required.' });

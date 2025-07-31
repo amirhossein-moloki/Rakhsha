@@ -28,11 +28,8 @@ services:
 
   redis:
     image: redis:alpine
-    # For local development, the port is exposed.
-    # In a production environment, this should ideally be removed
-    # and communication should only happen over the internal network.
-    ports:
-      - '6379:6379'
+    # In a production environment, communication should only happen
+    # over the internal network. The port is not exposed to the host.
     networks:
       - rakhsha-net
 

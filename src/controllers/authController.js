@@ -74,7 +74,11 @@ exports.login = async (req, res) => {
             $or: [{ username: login }, { email: login }],
         }).select('+passwordHash');
 
-        const hashToCompare = user ? user.passwordHash : await argon2.hash('a_random_dummy_password_string');
+        // If the user is not found, we use a dummy hash. This ensures that the argon2.verify
+        // function is always called, making the execution time consistent regardless of
+        // whether the user exists or not. This mitigates timing attacks for username enumeration.
+        // The dummy hash is a valid Argon2 hash for a random password.
+        const hashToCompare = user ? user.passwordHash : '$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$RUhwa2lCek9iSjJqM3g2dA';
 
         const isMatch = await argon2.verify(hashToCompare, password);
 
