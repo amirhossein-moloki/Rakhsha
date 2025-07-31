@@ -10,7 +10,9 @@ const Conversation = require('./models/Conversation');
 const PORT = process.env.PORT || 3000;
 
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server();
+
+io.attach(server);
 
 // Make io accessible to our router
 app.set('socketio', io);
@@ -43,9 +45,11 @@ io.on('connection', (socket) => {
     });
 
     socket.on('send_message', async (data) => {
-        const { conversationId, senderId, content } = data;
+        console.log('--- "send_message" event received ---', data);
+        const { conversationId, senderId, recipientId, content } = data;
 
-        const conversation = await Conversation.findById(conversationId);
+        const conversation = await Conversation.findById(conversationId).select('+conversationKey');
+        console.log('Found conversation:', !!conversation);
         if (!conversation) {
             // Handle error: conversation not found
             return;
@@ -55,14 +59,15 @@ io.on('connection', (socket) => {
 
         const message = new Message({
             conversationId,
-            senderId,
-            encrypted_content
+            recipientId,
+            ciphertextPayload: encrypted_content,
         });
         await message.save();
 
         // For consistency with getMessages, we can send back the decrypted message
         const messageData = message.toObject();
         messageData.content = content;
+    messageData.senderId = senderId; // Add senderId to the broadcasted message
         delete messageData.encrypted_content;
 
         io.to(conversationId).emit('receive_message', messageData);
@@ -72,9 +77,9 @@ io.on('connection', (socket) => {
         try {
             const message = await Message.findById(data.messageId);
             if (message) {
-                const conversation = await Conversation.findById(message.conversationId);
+                const conversation = await Conversation.findById(message.conversationId).select('+conversationKey');
                 if (conversation) {
-                    message.encrypted_content = encryptSymmetric(data.content, conversation.conversationKey);
+                    message.ciphertextPayload = encryptSymmetric(data.content, conversation.conversationKey);
                     message.edited = true;
                     await message.save();
 
@@ -143,20 +148,18 @@ if (process.env.NODE_ENV !== 'test') {
     redisClient.connect();
 }
 
-// Define ranges for cover traffic randomization
-const MIN_PADDING_SIZE = 512; // 0.5 KB
-const MAX_PADDING_SIZE = 2048; // 2 KB
-const MIN_PADDING_INTERVAL = 500; // 0.5 seconds
-const MAX_PADDING_INTERVAL = 2000; // 2 seconds
+// Define constants for constant-rate cover traffic
+const PADDING_SIZE = 1024; // 1 KB
+const PADDING_INTERVAL = 500; // 0.5 seconds
 
 /**
- * Sends variable-size padding packets to all connected clients.
- * This creates a dynamic stream of traffic to obfuscate real user activity.
+ * Sends fixed-size padding packets to all connected clients at a constant rate.
+ * This creates a uniform stream of traffic to obfuscate real user activity.
  */
-function sendPaddingTraffic(packetSize) {
+function sendPaddingTraffic() {
     const allSockets = io.sockets.sockets;
 
-    const paddingData = crypto.randomBytes(packetSize);
+    const paddingData = crypto.randomBytes(PADDING_SIZE);
     const fakeKey = generateSymmetricKey(); // Use a new dummy key for each broadcast
     const encryptedPadding = encryptSymmetric(paddingData.toString('hex'), fakeKey);
 
@@ -181,19 +184,8 @@ if (process.env.NODE_ENV !== 'test') {
 
     connectDB();
 
-    // Self-adjusting timer loop for sending randomized padding traffic
-    const scheduleNextPadding = () => {
-        const interval = crypto.randomInt(MIN_PADDING_INTERVAL, MAX_PADDING_INTERVAL + 1);
-        const size = crypto.randomInt(MIN_PADDING_SIZE, MAX_PADDING_SIZE + 1);
-
-        setTimeout(() => {
-            sendPaddingTraffic(size);
-            scheduleNextPadding(); // Schedule the next one
-        }, interval);
-    };
-
-    // Start the padding loop
-    scheduleNextPadding();
+    // Start sending padding traffic at a fixed interval
+    setInterval(sendPaddingTraffic, PADDING_INTERVAL);
 
     server.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);

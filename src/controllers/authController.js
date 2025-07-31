@@ -1,19 +1,51 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
+const argon2 = require('argon2');
+const { generateECDHKeyPair, sign } = require('../utils/crypto');
+
 
 exports.register = async (req, res) => {
     try {
         const { username, email, password } = req.body;
-        if (!username || !password) {
-            return res.status(400).send({ error: 'Username and password are required' });
+        if (!username || !email || !password) {
+            return res.status(400).send({ error: 'Username, email, and password are required' });
         }
+
+        // 1. Generate Identity Key
+        const identityKeyPair = generateECDHKeyPair();
+
+        // 2. Generate Signed Pre-Key
+        const signedPreKeyPair = generateECDHKeyPair();
+
+        // 3. Sign the public part of the signed pre-key with the private identity key
+        const signature = sign(signedPreKeyPair.publicKey, identityKeyPair.privateKey);
+
+        // 4. Generate One-Time Pre-Keys
+        const oneTimePreKeys = [];
+        for (let i = 0; i < 50; i++) {
+            const oneTimePreKeyPair = generateECDHKeyPair();
+            oneTimePreKeys.push({
+                keyId: i + 1,
+                publicKey: oneTimePreKeyPair.publicKey,
+            });
+        }
+
+        const passwordHash = await argon2.hash(password);
 
         const user = new User({
             username,
-            email, // email is optional
-            passwordHash: password
+            email,
+            passwordHash,
+            identityKey: identityKeyPair.publicKey,
+            preKeyBundle: {
+                signedPreKey: {
+                    publicKey: signedPreKeyPair.publicKey,
+                    signature: signature,
+                },
+                oneTimePreKeys: oneTimePreKeys,
+            },
         });
+
         // We will attempt to save the user. If it fails due to a duplicate key,
         // the catch block will handle it. In either case, we send a success
         // response to prevent username enumeration.
@@ -33,17 +65,14 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
     try {
-        const { email, username, password } = req.body;
-        if (!password || (!email && !username)) {
-            return res.status(400).send({ error: 'Email or username, and password are required' });
+        const { login, password } = req.body; // 'login' can be username or email
+        if (!password || !login) {
+            return res.status(400).send({ error: 'Login identifier and password are required' });
         }
 
-        let user;
-        if (email) {
-            user = await User.findOne({ email });
-        } else {
-            user = await User.findOne({ username });
-        }
+        const user = await User.findOne({
+            $or: [{ username: login }, { email: login }],
+        });
 
         if (!user) {
             return res.status(401).send({ error: 'Invalid credentials' });
@@ -72,7 +101,7 @@ exports.secretLogin = async (req, res) => {
             return res.status(401).send({ error: 'Invalid credentials' });
         }
 
-        const isMatch = await bcrypt.compare(secondaryPassword, user.secondaryPasswordHash);
+        const isMatch = await argon2.verify(user.secondaryPasswordHash, secondaryPassword);
         if (!isMatch) {
             return res.status(401).send({ error: 'Invalid credentials' });
         }
@@ -91,15 +120,7 @@ exports.secretLogin = async (req, res) => {
 };
 
 exports.getMe = async (req, res) => {
-    try {
-        // req.user is populated by the authMiddleware from the token
-        const user = await User.findById(req.user.userId);
-        if (!user) {
-            return res.status(404).send({ error: 'User not found' });
-        }
-        res.send(user);
-    } catch (error) {
-        // This part is likely unreachable if authMiddleware succeeds, but good for safety
-        res.status(500).send({ error: 'An error occurred while fetching user data.' });
-    }
+    // The user object is already fetched and attached to the request by the auth middleware.
+    // We can just send it back.
+    res.send(req.user);
 };

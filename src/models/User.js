@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+const argon2 = require('argon2');
 
 const UserSchema = new mongoose.Schema({
     username: {
@@ -10,6 +10,8 @@ const UserSchema = new mongoose.Schema({
     },
     email: {
         type: String,
+        required: true,
+        unique: true,
         trim: true,
         lowercase: true
     },
@@ -22,11 +24,19 @@ const UserSchema = new mongoose.Schema({
         select: false // Do not include by default in queries
     },
     // For E2EE Key Exchange (X3DH)
-    identityKey: { // Long-term public identity key
+    identityKey: { // ECDH public identity key
         type: String,
+        required: true
     },
-    preKeyBundle: { // Signed pre-key + one-time pre-keys
-        type: mongoose.Schema.Types.Mixed,
+    preKeyBundle: {
+        signedPreKey: {
+            publicKey: { type: String, required: true },
+            signature: { type: String, required: true }
+        },
+        oneTimePreKeys: [{
+            keyId: { type: Number, required: true },
+            publicKey: { type: String, required: true }
+        }]
     },
     profilePictureUrl: {
         type: String,
@@ -52,24 +62,20 @@ const UserSchema = new mongoose.Schema({
     }
 });
 
-UserSchema.index({ email: 1 }, { unique: true, sparse: true });
 
 UserSchema.pre('save', async function(next) {
-    if (this.isModified('passwordHash')) {
-        this.passwordHash = await bcrypt.hash(this.passwordHash, 10);
+    // The hashing is now expected to be done in the controller/service layer
+    // before saving. This hook is now only for other potential pre-save logic.
+    // We can still hash the secondary password here if it's set.
+    if (this.isModified('secondaryPasswordHash') && this.secondaryPasswordHash) {
+        this.secondaryPasswordHash = await argon2.hash(this.secondaryPasswordHash);
     }
     next();
 });
 
-if (process.env.NODE_ENV === 'test') {
-    UserSchema.methods.comparePassword = function(password) {
-        return Promise.resolve(true);
-    };
-} else {
-    UserSchema.methods.comparePassword = function(password) {
-        return bcrypt.compare(password, this.passwordHash);
-    };
-}
+UserSchema.methods.comparePassword = function(password) {
+    return argon2.verify(this.passwordHash, password);
+};
 
 const User = mongoose.model('User', UserSchema);
 

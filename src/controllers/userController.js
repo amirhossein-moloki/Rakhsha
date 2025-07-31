@@ -1,7 +1,6 @@
 const User = require('../models/User');
 const asyncHandler = require('express-async-handler');
 const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 
 /**
  * @description Upload user's public key bundle
@@ -27,21 +26,35 @@ exports.uploadKeys = asyncHandler(async (req, res) => {
 });
 
 /**
- * @description Get a user's public key bundle
- * @route GET /api/users/:username/keys
+ * @description Get a user's pre-key bundle for initiating a secure session.
+ *              This fetches the identity key, the signed pre-key, and ONE
+ *              one-time pre-key. The one-time pre-key is then removed.
+ * @route GET /api/users/:username/pre-key-bundle
  * @access Private
  */
-exports.getKeysForUser = asyncHandler(async (req, res) => {
+exports.getPreKeyBundleForUser = asyncHandler(async (req, res) => {
     const { username } = req.params;
-    const user = await User.findOne({ username });
 
-    if (!user || !user.preKeyBundle) {
-        return res.status(404).send({ error: 'Keys for user not found.' });
+    // Atomically find the user and pop one key from the oneTimePreKeys array.
+    const user = await User.findOneAndUpdate(
+        { username },
+        { $pop: { 'preKeyBundle.oneTimePreKeys': -1 } }, // -1 pops from the beginning (FIFO)
+        { new: false } // Return the document *before* the update
+    );
+
+    if (!user || !user.preKeyBundle || user.preKeyBundle.oneTimePreKeys.length === 0) {
+        // If the user is not found, or has no keys left, return an error.
+        // The client should probably try again later if the user runs out of keys.
+        return res.status(404).send({ error: 'Pre-key bundle for user not found or user has no available one-time keys.' });
     }
+
+    // The key that was just popped is the first one in the array from the document before the update.
+    const oneTimePreKey = user.preKeyBundle.oneTimePreKeys[0];
 
     res.status(200).send({
         identityKey: user.identityKey,
-        preKeyBundle: user.preKeyBundle
+        signedPreKey: user.preKeyBundle.signedPreKey,
+        oneTimePreKey: oneTimePreKey,
     });
 });
 
@@ -100,15 +113,14 @@ exports.setSecondaryPassword = asyncHandler(async (req, res) => {
         return res.status(400).send({ error: 'Secondary password must be a string of at least 8 characters.' });
     }
 
-    // We need to explicitly select the hash field since it's not selected by default
-    const user = await User.findById(req.user._id).select('+secondaryPasswordHash');
+    const user = await User.findById(req.user._id);
     if (!user) {
         return res.status(404).send({ error: 'User not found.' });
     }
 
-    user.secondaryPasswordHash = await bcrypt.hash(secondaryPassword, 10);
+    // The hashing is now handled by the pre-save hook in the User model
+    user.secondaryPasswordHash = secondaryPassword;
     await user.save();
 
-    // Avoid sending back any user data, just a confirmation
     res.status(200).send({ message: 'Secondary password set successfully.' });
 });

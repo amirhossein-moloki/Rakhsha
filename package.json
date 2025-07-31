@@ -19,9 +19,11 @@
   },
   "homepage": "https://github.com/amirhossein-moloki/Rakhsha#readme",
   "dependencies": {
-    "bcryptjs": "^3.0.2",
+    "argon2": "^0.40.3",
+    "axios": "^1.7.2",
     "crypto-js": "^4.2.0",
     "dotenv": "^17.2.1",
+    "elliptic": "^6.6.1",
     "express": "^5.1.0",
     "express-async-handler": "^1.2.0",
     "jsonwebtoken": "^9.0.2",
@@ -35,6 +37,7 @@
     "cross-env": "^10.0.0",
     "jest": "^30.0.5",
     "mongodb-memory-server": "^10.1.4",
+    "socket.io-client": "^4.8.1",
     "supertest": "^7.1.4",
     "tslib": "^2.3.1"
   }

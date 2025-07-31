@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { uploadKeys, getKeysForUser, getUserFingerprint, updateUserSettings, setSecondaryPassword } = require('../controllers/userController');
+const { uploadKeys, getPreKeyBundleForUser, getUserFingerprint, updateUserSettings, setSecondaryPassword } = require('../controllers/userController');
 const authMiddleware = require('../middleware/auth');
 
 // All routes in this file are protected
@@ -12,11 +12,11 @@ router.post('/secondary-password', setSecondaryPassword);
 // Route to update user settings
 router.put('/settings', updateUserSettings);
 
-// Route to upload public keys
+// Route to upload public keys. This would be used by a client to replenish their one-time keys.
 router.post('/keys', uploadKeys);
 
-// Route to get another user's public key bundle
-router.get('/:username/keys', getKeysForUser);
+// Route to get another user's pre-key bundle to initiate a session
+router.get('/:username/pre-key-bundle', getPreKeyBundleForUser);
 
 // Route for key verification (fingerprint)
 router.get('/:username/fingerprint', getUserFingerprint);

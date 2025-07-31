@@ -44,8 +44,86 @@ const decryptSymmetric = (text, keyHex) => {
 };
 
 
+const encryptRSA = (text, publicKey) => {
+    const buffer = Buffer.from(text, 'utf8');
+    const encrypted = crypto.publicEncrypt(
+        {
+            key: publicKey,
+            padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+            oaepHash: 'sha256',
+        },
+        buffer
+    );
+    return encrypted.toString('base64');
+};
+
+const decryptRSA = (encryptedText, privateKey) => {
+    const buffer = Buffer.from(encryptedText, 'base64');
+    const decrypted = crypto.privateDecrypt(
+        {
+            key: privateKey,
+            padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+            oaepHash: 'sha256',
+        },
+        buffer
+    );
+    return decrypted.toString('utf8');
+};
+
+const encryptHybrid = (text, publicKey) => {
+    const symmetricKey = generateSymmetricKey();
+    const encryptedPayload = encryptSymmetric(text, symmetricKey);
+    const encryptedSymmetricKey = encryptRSA(symmetricKey, publicKey);
+    return JSON.stringify({
+        key: encryptedSymmetricKey,
+        payload: encryptedPayload,
+    });
+};
+
+const decryptHybrid = (encryptedData, privateKey) => {
+    const { key, payload } = JSON.parse(encryptedData);
+    const symmetricKey = decryptRSA(key, privateKey);
+    return decryptSymmetric(payload, symmetricKey);
+};
+
+const { ec } = require('elliptic');
+const ec_secp256k1 = new ec('secp256k1');
+
+const sign = (data, privateKey) => {
+    const key = ec_secp256k1.keyFromPrivate(privateKey, 'hex');
+    const signature = key.sign(data);
+    return signature.toDER('hex');
+};
+
+const verify = (data, signature, publicKey) => {
+    const key = ec_secp256k1.keyFromPublic(publicKey, 'hex');
+    return key.verify(data, signature);
+};
+
+const generateECDHKeyPair = () => {
+    const keyPair = ec_secp256k1.genKeyPair();
+    return {
+        publicKey: keyPair.getPublic('hex'),
+        privateKey: keyPair.getPrivate('hex'),
+    };
+};
+
+const computeECDHSharedSecret = (privateKey, otherPublicKey) => {
+    const ecdh = crypto.createECDH('secp256k1');
+    ecdh.setPrivateKey(privateKey, 'base64');
+    return ecdh.computeSecret(otherPublicKey, 'base64', 'hex');
+};
+
 module.exports = {
     generateSymmetricKey,
     encryptSymmetric,
     decryptSymmetric,
+    encryptRSA,
+    decryptRSA,
+    encryptHybrid,
+    decryptHybrid,
+    sign,
+    verify,
+    generateECDHKeyPair,
+    computeECDHSharedSecret,
 };

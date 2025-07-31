@@ -33,7 +33,7 @@ exports.uploadFile = [
         }
 
         // Authorize: Check if the user is a participant
-        if (!conversation.participantIds.map(id => id.toString()).includes(req.user._id.toString())) {
+        if (!req.user.conversations.map(id => id.toString()).includes(conversationId)) {
             return res.status(403).send({ error: 'Forbidden: You are not a participant in this conversation.' });
         }
 
@@ -81,7 +81,7 @@ exports.downloadFile = asyncHandler(async (req, res) => {
     }
 
     // Authorize: Check if the user is a participant
-    if (!conversation.participantIds.map(id => id.toString()).includes(req.user._id.toString())) {
+    if (!req.user.conversations.map(id => id.toString()).includes(file.conversationId.toString())) {
         return res.status(403).send({ error: 'Forbidden: You are not a participant in this conversation.' });
     }
 
