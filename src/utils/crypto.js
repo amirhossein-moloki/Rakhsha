@@ -1,7 +1,8 @@
 const crypto = require('crypto');
 
-const ALGORITHM = 'aes-256-cbc';
-const IV_LENGTH = 16; // For AES, this is always 16
+const ALGORITHM = 'aes-256-gcm';
+const IV_LENGTH = 16; // GCM uses a 12-byte nonce, but 16 is also acceptable and common.
+const AUTH_TAG_LENGTH = 16; // GCM standard auth tag length
 
 /**
  * Generates a random 32-byte (256-bit) symmetric key.
@@ -12,35 +13,43 @@ const generateSymmetricKey = () => {
 };
 
 /**
- * Encrypts data using AES-256-CBC.
+ * Encrypts data using AES-256-GCM (Authenticated Encryption).
  * @param {string} text The text to encrypt.
  * @param {string} keyHex The hex-encoded 32-byte encryption key.
- * @returns {string} The IV and the encrypted data, concatenated with a colon and hex-encoded.
+ * @returns {string} A string containing iv, auth tag, and encrypted data, hex-encoded and colon-separated.
  */
 const encryptSymmetric = (text, keyHex) => {
     const iv = crypto.randomBytes(IV_LENGTH);
     const key = Buffer.from(keyHex, 'hex');
     const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-    let encrypted = cipher.update(text, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    return iv.toString('hex') + ':' + encrypted;
+    const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+
+    return [
+        iv.toString('hex'),
+        authTag.toString('hex'),
+        encrypted.toString('hex')
+    ].join(':');
 };
 
 /**
- * Decrypts data encrypted with encryptSymmetric.
- * @param {string} text The encrypted text in "iv:encryptedData" format.
+ * Decrypts data encrypted with AES-256-GCM.
+ * @param {string} text The encrypted text in "iv:authTag:encryptedData" format.
  * @param {string} keyHex The hex-encoded 32-byte encryption key.
- * @returns {string} The decrypted text.
+ * @returns {string} The decrypted text. Throws an error if authentication fails.
  */
 const decryptSymmetric = (text, keyHex) => {
     const textParts = text.split(':');
-    const iv = Buffer.from(textParts.shift(), 'hex');
-    const encryptedText = Buffer.from(textParts.join(':'), 'hex');
+    const iv = Buffer.from(textParts[0], 'hex');
+    const authTag = Buffer.from(textParts[1], 'hex');
+    const encryptedText = Buffer.from(textParts[2], 'hex');
     const key = Buffer.from(keyHex, 'hex');
+
     const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-    let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
+    decipher.setAuthTag(authTag);
+
+    const decrypted = Buffer.concat([decipher.update(encryptedText), decipher.final()]);
+    return decrypted.toString('utf8');
 };
 
 

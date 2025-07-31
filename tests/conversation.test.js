@@ -1,12 +1,3 @@
-jest.mock('argon2', () => ({
-    ...jest.requireActual('argon2'),
-    verify: (hash, plain) => {
-        // In tests, we can use a simple check if the plain password is 'password'
-        // or whatever we set in the test user creation.
-        return Promise.resolve(plain === 'password');
-    },
-    hash: (plain) => Promise.resolve(`hashed_${plain}`),
-}));
 const request = require('supertest');
 const app = require('../src/app');
 const mongoose = require('mongoose');
@@ -29,15 +20,15 @@ describe('Conversation Routes', () => {
         await Conversation.deleteMany({});
         await Message.deleteMany({});
 
-        // The pre-save hook will now hash 'password' into 'hashed_password' because of our mock
-        user = createTestUser('testuser', 'password');
+        // Using real argon2 now, so we provide a real password
+        user = await createTestUser('testuser', 'password123');
         await user.save();
         userId = user._id;
 
         const PADDING_SIZE = 4096;
         const loginData = {
-            username: 'testuser',
-            password: 'password' // This needs to match the plain text password for argon2.verify mock
+            login: 'testuser', // Use login field as per controller
+            password: 'password123'
         };
         const loginDataString = JSON.stringify(loginData);
         const loginPaddingNeeded = PADDING_SIZE - loginDataString.length;
@@ -48,11 +39,16 @@ describe('Conversation Routes', () => {
         const resLogin = await request(app)
             .post('/api/auth/login')
             .send(loginData);
+
+        // Check if login was successful before getting the token
+        if (resLogin.statusCode !== 200) {
+            console.error('Login failed in test setup:', resLogin.body);
+        }
         token = resLogin.body.token;
     });
 
     it('should create a new conversation and get it', async () => {
-        const otherUser = createTestUser('otheruser', 'testhash');
+        const otherUser = await createTestUser('otheruser', 'password123');
         await otherUser.save();
 
         const conversationName = 'Test Conversation';
@@ -66,7 +62,6 @@ describe('Conversation Routes', () => {
         const PADDING_SIZE = 4096; // 4 KB
         const conversationData = {
             type: 'private',
-            // The new API expects encryptedMetadata and the plaintext participantIds
             encryptedMetadata: JSON.stringify({ name: encryptedName, participants }),
             participantIds: participantIds,
             encryptedCreatedAt: encryptedTimestamp,

@@ -72,19 +72,23 @@ exports.login = async (req, res) => {
 
         const user = await User.findOne({
             $or: [{ username: login }, { email: login }],
-        });
+        }).select('+passwordHash');
 
-        if (!user) {
+        const hashToCompare = user ? user.passwordHash : await argon2.hash('a_random_dummy_password_string');
+
+        const isMatch = await argon2.verify(hashToCompare, password);
+
+        if (!user || !isMatch) {
             return res.status(401).send({ error: 'Invalid credentials' });
         }
-        const isMatch = await user.comparePassword(password);
-        if (!isMatch) {
-            return res.status(401).send({ error: 'Invalid credentials' });
-        }
+
         const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
         res.send({ token });
     } catch (error) {
-        res.status(400).send({ error: 'Failed to login' });
+        // It's better to log the actual error for debugging purposes
+        console.error('Login error:', error);
+        // But send a generic message to the client
+        res.status(500).send({ error: 'An internal error occurred during login.' });
     }
 };
 

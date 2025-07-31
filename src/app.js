@@ -1,8 +1,10 @@
 const express = require('express');
+const helmet = require('helmet');
 const app = express();
 const trafficObfuscation = require('./middleware/trafficObfuscation');
 const requestPadding = require('./middleware/requestPadding');
 
+app.use(helmet());
 app.use(express.json());
 
 // Apply traffic obfuscation middleware to all responses
