@@ -26,21 +26,35 @@ exports.uploadKeys = asyncHandler(async (req, res) => {
 });
 
 /**
- * @description Get a user's public key bundle
- * @route GET /api/users/:username/keys
+ * @description Get a user's pre-key bundle for initiating a secure session.
+ *              This fetches the identity key, the signed pre-key, and ONE
+ *              one-time pre-key. The one-time pre-key is then removed.
+ * @route GET /api/users/:username/pre-key-bundle
  * @access Private
  */
-exports.getKeysForUser = asyncHandler(async (req, res) => {
+exports.getPreKeyBundleForUser = asyncHandler(async (req, res) => {
     const { username } = req.params;
-    const user = await User.findOne({ username });
 
-    if (!user || !user.preKeyBundle) {
-        return res.status(404).send({ error: 'Keys for user not found.' });
+    // Atomically find the user and pop one key from the oneTimePreKeys array.
+    const user = await User.findOneAndUpdate(
+        { username },
+        { $pop: { 'preKeyBundle.oneTimePreKeys': -1 } }, // -1 pops from the beginning (FIFO)
+        { new: false } // Return the document *before* the update
+    );
+
+    if (!user || !user.preKeyBundle || user.preKeyBundle.oneTimePreKeys.length === 0) {
+        // If the user is not found, or has no keys left, return an error.
+        // The client should probably try again later if the user runs out of keys.
+        return res.status(404).send({ error: 'Pre-key bundle for user not found or user has no available one-time keys.' });
     }
+
+    // The key that was just popped is the first one in the array from the document before the update.
+    const oneTimePreKey = user.preKeyBundle.oneTimePreKeys[0];
 
     res.status(200).send({
         identityKey: user.identityKey,
-        preKeyBundle: user.preKeyBundle
+        signedPreKey: user.preKeyBundle.signedPreKey,
+        oneTimePreKey: oneTimePreKey,
     });
 });
 

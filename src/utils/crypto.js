@@ -86,6 +86,35 @@ const decryptHybrid = (encryptedData, privateKey) => {
     return decryptSymmetric(payload, symmetricKey);
 };
 
+const sign = (data, privateKey) => {
+    const signer = crypto.createSign('sha256');
+    signer.update(data);
+    signer.end();
+    return signer.sign(privateKey, 'base64');
+};
+
+const verify = (data, signature, publicKey) => {
+    const verifier = crypto.createVerify('sha256');
+    verifier.update(data);
+    verifier.end();
+    return verifier.verify(publicKey, signature, 'base64');
+};
+
+const generateECDHKeyPair = () => {
+    const ecdh = crypto.createECDH('secp256k1');
+    ecdh.generateKeys();
+    return {
+        publicKey: ecdh.getPublicKey('base64'),
+        privateKey: ecdh.getPrivateKey('base64'),
+    };
+};
+
+const computeECDHSharedSecret = (privateKey, otherPublicKey) => {
+    const ecdh = crypto.createECDH('secp256k1');
+    ecdh.setPrivateKey(privateKey, 'base64');
+    return ecdh.computeSecret(otherPublicKey, 'base64', 'hex');
+};
+
 module.exports = {
     generateSymmetricKey,
     encryptSymmetric,
@@ -94,4 +123,8 @@ module.exports = {
     decryptRSA,
     encryptHybrid,
     decryptHybrid,
+    sign,
+    verify,
+    generateECDHKeyPair,
+    computeECDHSharedSecret,
 };

@@ -1,9 +1,10 @@
 const Message = require('../models/Message');
 const Conversation = require('../models/Conversation');
 const asyncHandler = require('express-async-handler');
-const { decryptHybrid } = require('../utils/crypto');
+const { decryptHybrid, verify } = require('../utils/crypto');
 const axios = require('axios');
 const Node = require('../models/Node');
+const User = require('../models/User');
 
 /**
  * @description Send a new message
@@ -40,10 +41,7 @@ exports.sendMessage = asyncHandler(async (req, res) => {
 
     await message.save();
 
-    // 4. Update the conversation's lastMessageAt timestamp
-    await Conversation.findByIdAndUpdate(conversationId, { lastMessageAt: encryptedTimestamp });
-
-    // 5. Notify the recipient via WebSocket in real-time
+    // 4. Notify the recipient via WebSocket in real-time
     const io = req.app.get('socketio');
     if (io) {
         // The client-side should be listening for the 'receive_message' event
@@ -120,27 +118,45 @@ exports.routeMessage = asyncHandler(async (req, res) => {
 
         if (nextNodeAddress === 'self' || nextNodeAddress === process.env.SERVER_ADDRESS) {
             // This server is the final destination.
-            // The remainingPayload should be a standard message object that can be processed by sendMessage.
-            // We need to fake a request and response object to call sendMessage.
-            const fakeReq = {
-                body: JSON.parse(remainingPayload),
-                // We need to create a fake user object for the authorization in sendMessage.
-                // This is a security risk, as we are trusting the sender.
-                // In a real implementation, the final payload would be signed by the sender.
-                user: { conversations: [JSON.parse(remainingPayload).conversationId] }
-            };
-            const fakeRes = {
-                status: (code) => ({ send: (data) => {
-                    // We don't need to do anything with the response here.
-                }}),
-                send: (data) => {
-                    // We don't need to do anything with the response here.
-                }
-            };
-            await exports.sendMessage(fakeReq, fakeRes);
+            // The remainingPayload is a JSON string containing the signed message data.
+            const { signedMessage, senderIdentityKey } = JSON.parse(remainingPayload);
+            const { messageData, signature } = JSON.parse(signedMessage);
+
+            // 1. Verify the signature. The sender signs the message data with their private identity key.
+            const isVerified = verify(JSON.stringify(messageData), signature, senderIdentityKey);
+
+            if (!isVerified) {
+                return res.status(401).send({ error: 'Invalid signature.' });
+            }
+
+            // 2. The sender must be a valid user in the system.
+            // We find the user by their public identity key.
+            const sender = await User.findOne({ identityKey: senderIdentityKey });
+            if (!sender) {
+                return res.status(403).send({ error: 'Forbidden. Sender is not a registered user.' });
+            }
+
+            // 3. The sender must be a participant in the conversation.
+            // This is the crucial authorization step.
+            if (!sender.conversations.map(id => id.toString()).includes(messageData.conversationId)) {
+                return res.status(403).send({ error: 'Forbidden: Sender is not a participant in this conversation.' });
+            }
+
+            // 4. If signature and authorization are valid, create and save the message.
+            // We are still preserving the "Sealed Sender" principle by NOT storing senderId.
+            const message = new Message(messageData);
+            await message.save();
+
+            // 5. Notify the recipient via WebSocket in real-time.
+            const io = req.app.get('socketio');
+            if (io) {
+                io.to(messageData.conversationId).emit('receive_message', message);
+            }
+
             res.status(200).send({ message: 'Message delivered.' });
+
         } else {
-            // Forward the message to the next node.
+            // Forward the message to the next node in the mixnet.
             await axios.post(`${nextNodeAddress}/api/messages/route`, {
                 onionPayload: remainingPayload
             });

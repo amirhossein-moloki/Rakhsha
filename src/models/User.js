@@ -8,11 +8,6 @@ const UserSchema = new mongoose.Schema({
         unique: true,
         trim: true
     },
-    email: {
-        type: String,
-        trim: true,
-        lowercase: true
-    },
     passwordHash: {
         type: String,
         required: true
@@ -22,11 +17,19 @@ const UserSchema = new mongoose.Schema({
         select: false // Do not include by default in queries
     },
     // For E2EE Key Exchange (X3DH)
-    identityKey: { // Long-term public identity key
+    identityKey: { // ECDH public identity key
         type: String,
+        required: true
     },
-    preKeyBundle: { // Signed pre-key + one-time pre-keys
-        type: mongoose.Schema.Types.Mixed,
+    preKeyBundle: {
+        signedPreKey: {
+            publicKey: { type: String, required: true },
+            signature: { type: String, required: true }
+        },
+        oneTimePreKeys: [{
+            keyId: { type: Number, required: true },
+            publicKey: { type: String, required: true }
+        }]
     },
     profilePictureUrl: {
         type: String,
@@ -52,7 +55,6 @@ const UserSchema = new mongoose.Schema({
     }
 });
 
-UserSchema.index({ email: 1 }, { unique: true, sparse: true });
 
 UserSchema.pre('save', async function(next) {
     if (this.isModified('passwordHash')) {

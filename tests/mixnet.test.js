@@ -10,7 +10,7 @@ const axios = require('axios');
 jest.mock('axios');
 
 describe('Mix Network E2E Tests', () => {
-    const { setup, teardown } = require('./setup');
+    const { setup, teardown, createTestUser } = require('./setup');
     let user1, user2;
     let conversation;
     let node1, node2;
@@ -23,8 +23,8 @@ describe('Mix Network E2E Tests', () => {
         await Conversation.deleteMany({});
         await Node.deleteMany({});
 
-        user1 = new User({ username: 'user1', email: 'user1@test.com', passwordHash: 'password' });
-        user2 = new User({ username: 'user2', email: 'user2@test.com', passwordHash: 'password' });
+        user1 = createTestUser('user1', 'password');
+        user2 = createTestUser('user2', 'password');
         await user1.save();
         await user2.save();
 

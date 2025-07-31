@@ -20,7 +20,7 @@ describe('Conversation Routes', () => {
     let userId;
     let user;
 
-    const { setup, teardown } = require('./setup');
+    const { setup, teardown, createTestUser } = require('./setup');
     beforeAll(setup);
     afterAll(teardown);
 
@@ -30,13 +30,13 @@ describe('Conversation Routes', () => {
         await Message.deleteMany({});
 
         // The pre-save hook will now hash 'password' into 'hashed_password' because of our mock
-        user = new User({ username: 'testuser', email: 'test@test.com', passwordHash: 'password' });
+        user = createTestUser('testuser', 'password');
         await user.save();
         userId = user._id;
 
         const PADDING_SIZE = 4096;
         const loginData = {
-            email: 'test@test.com',
+            username: 'testuser',
             password: 'password' // This needs to match the plain text password for argon2.verify mock
         };
         const loginDataString = JSON.stringify(loginData);
@@ -52,7 +52,7 @@ describe('Conversation Routes', () => {
     });
 
     it('should create a new conversation and get it', async () => {
-        const otherUser = new User({ username: 'otheruser', email: 'other@test.com', passwordHash: 'testhash' });
+        const otherUser = createTestUser('otheruser', 'testhash');
         await otherUser.save();
 
         const conversationName = 'Test Conversation';

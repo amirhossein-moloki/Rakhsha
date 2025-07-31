@@ -25,7 +25,7 @@ const padRequest = (data) => {
 };
 
 describe('Secret Mode E2E Tests', () => {
-    const { setup, teardown } = require('./setup');
+    const { setup, teardown, createTestUser } = require('./setup');
     let user;
     let standardToken;
 
@@ -38,8 +38,8 @@ describe('Secret Mode E2E Tests', () => {
         await User.deleteMany({});
         await Conversation.deleteMany({});
 
-        // Create a standard user
-        user = new User({ username: 'secret_tester', email: 'secret@test.com', passwordHash: 'mainpassword' });
+        // Create a standard user using the helper
+        user = createTestUser('secret_tester', 'mainpassword');
         await user.save();
 
         // Generate a standard token for the user

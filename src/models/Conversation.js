@@ -22,9 +22,6 @@ const ConversationSchema = new mongoose.Schema({
         type: String, // Encrypted Date
         required: true
     },
-    lastMessageAt: {
-        type: String // Encrypted Date
-    },
     isHidden: {
         type: Boolean,
         default: false
