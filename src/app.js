@@ -56,5 +56,6 @@ app.use(errorHandler);
 
 // Start cron jobs
 require('./jobs/messageCleanup');
+require('./jobs/userCleanup');
 
 module.exports = app;

@@ -1,4 +1,6 @@
 const User = require('../models/User');
+const Conversation = require('../models/Conversation');
+const Message = require('../models/Message');
 const asyncHandler = require('express-async-handler');
 const crypto = require('crypto');
 
@@ -84,21 +86,47 @@ exports.getUserFingerprint = asyncHandler(async (req, res) => {
  * @access Private
  */
 exports.updateUserSettings = asyncHandler(async (req, res) => {
-    const { readReceiptsEnabled } = req.body;
-
-    if (typeof readReceiptsEnabled !== 'boolean') {
-        return res.status(400).send({ error: 'readReceiptsEnabled must be a boolean.' });
-    }
+    const { readReceiptsEnabled, secretPriceInterval } = req.body;
 
     const user = await User.findById(req.user._id);
     if (!user) {
         return res.status(404).send({ error: 'User not found.' });
     }
 
-    user.settings.readReceiptsEnabled = readReceiptsEnabled;
+    if (readReceiptsEnabled !== undefined) {
+        if (typeof readReceiptsEnabled !== 'boolean') {
+            return res.status(400).send({ error: 'readReceiptsEnabled must be a boolean.' });
+        }
+        user.settings.readReceiptsEnabled = readReceiptsEnabled;
+    }
+
+    if (secretPriceInterval !== undefined) {
+        if (typeof secretPriceInterval !== 'number' || secretPriceInterval <= 0 || secretPriceInterval > 12) {
+            return res.status(400).send({ error: 'secretPriceInterval must be a number between 1 and 12.' });
+        }
+        user.settings.secretPriceInterval = secretPriceInterval;
+    }
+
     await user.save();
 
     res.status(200).send({ message: 'Settings updated successfully.' });
+});
+
+/**
+ * @description Updates the last time user viewed the secret price
+ * @route POST /api/users/open-secret-price
+ * @access Private
+ */
+exports.openSecretPrice = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+        return res.status(404).send({ error: 'User not found.' });
+    }
+
+    user.lastSecretPriceView = new Date();
+    await user.save();
+
+    res.status(200).send({ message: 'Secret price view time updated successfully.' });
 });
 
 /**
@@ -123,4 +151,63 @@ exports.setSecondaryPassword = asyncHandler(async (req, res) => {
     await user.save();
 
     res.status(200).send({ message: 'Secondary password set successfully.' });
+});
+
+/**
+ * @description Delete a user's account and all associated data
+ * @route DELETE /api/users/me
+ * @access Private
+ */
+exports.deleteMe = asyncHandler(async (req, res) => {
+    const userId = req.user._id;
+
+    // This is a full account deletion, so we need to delete all conversations
+    // that the user is a part of. Since we don't have participant info,
+    // we'll rely on the client to provide the conversation IDs, or
+    // simply orphan the conversations. For now, we just delete the user doc.
+    // A more robust solution would be a cleanup job that handles orphaned data.
+
+    // Find all conversations associated with the user
+    const user = await User.findById(userId).select('conversations');
+    if (user && user.conversations.length > 0) {
+        // Delete messages in those conversations
+        await Message.deleteMany({ conversation: { $in: user.conversations } });
+        // Delete the conversations themselves
+        await Conversation.deleteMany({ _id: { $in: user.conversations } });
+    }
+
+    // Delete the user
+    await User.findByIdAndDelete(userId);
+
+    res.status(200).send({ message: 'User account deleted successfully.' });
+});
+
+/**
+ * @description Delete a user's secret data only
+ * @route DELETE /api/users/me/secret
+ * @access Private
+ */
+exports.deleteSecretData = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id).populate('conversations');
+
+    if (!user) {
+        return res.status(404).send({ error: 'User not found.' });
+    }
+
+    // Filter out hidden conversations
+    const hiddenConversationIds = user.conversations
+        .filter(conv => conv.isHidden)
+        .map(conv => conv._id);
+
+    if (hiddenConversationIds.length > 0) {
+        // Remove hidden conversations from the user's list
+        user.conversations = user.conversations.filter(conv => !conv.isHidden);
+    }
+
+    // Reset the user's secret mode fields
+    user.secondaryPasswordHash = undefined;
+    user.lastSecretPriceView = new Date(); // Reset the clock
+    await user.save();
+
+    res.status(200).send({ message: 'Secret data deleted successfully.' });
 });

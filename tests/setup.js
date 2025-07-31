@@ -19,8 +19,9 @@ const argon2 = require('argon2');
 // Helper function to create a user with a valid, mock pre-key bundle.
 // This is needed because the User model now requires these fields.
 module.exports.createTestUser = async (username, password) => {
+    const User = require('../src/models/User');
     const passwordHash = await argon2.hash(password);
-    return new (require('../src/models/User'))({
+    const user = new User({
         username: username,
         email: `${username}@example.com`,
         passwordHash: passwordHash,
@@ -36,4 +37,6 @@ module.exports.createTestUser = async (username, password) => {
             ],
         },
     });
+    await user.save();
+    return user;
 };
