@@ -30,6 +30,7 @@ io.use(async (socket, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // We need the full user object with conversations to perform auth checks
         const user = await User.findById(decoded.userId).select('conversations');
         if (!user) {
             return next(new Error('Authentication error: User not found.'));
@@ -43,7 +44,11 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket) => {
-    console.log('a user connected');
+    console.log('a user connected:', socket.userId);
+
+    // Set user online status immediately after authenticated connection.
+    onlineUsers[socket.userId] = true;
+    io.emit('user_online', socket.userId);
 
     // Start a timer to disconnect the client if they don't send padding
     const setPaddingTimeout = () => {
@@ -64,17 +69,23 @@ io.on('connection', (socket) => {
     setPaddingTimeout();
 
     socket.on('join_conversation', (conversationId) => {
-        socket.join(conversationId);
+        // Authorization check: Only allow joining conversations they are part of.
+        if (socket.user.conversations.map(c => c.toString()).includes(conversationId)) {
+            socket.join(conversationId);
+        } else {
+            console.log(`SECURITY: User ${socket.userId} tried to join unauthorized conversation ${conversationId}`);
+        }
     });
 
     socket.on('send_message', async (data) => {
-        console.log('--- "send_message" event received ---', data);
-        const { conversationId, senderId, recipientId, content } = data;
+        // **SECURITY FIX**: Remove senderId from client data, use authenticated userId.
+        const { conversationId, recipientId, content } = data;
+        const senderId = socket.userId;
 
-        const conversation = await Conversation.findById(conversationId).select('+conversationKey');
-        console.log('Found conversation:', !!conversation);
+        // **SECURITY FIX**: Authorization check - User must be a participant of the conversation.
+        const conversation = await Conversation.findOne({ _id: conversationId, participants: senderId }).select('+conversationKey');
         if (!conversation) {
-            // Handle error: conversation not found
+            console.log(`SECURITY: User ${senderId} is not a participant of conversation ${conversationId} or it does not exist.`);
             return;
         }
 
@@ -82,15 +93,16 @@ io.on('connection', (socket) => {
 
         const message = new Message({
             conversationId,
+            // The senderId is NOT saved in the database to adhere to the "Sealed Sender" protocol.
             recipientId,
             ciphertextPayload: encrypted_content,
         });
         await message.save();
 
-        // For consistency with getMessages, we can send back the decrypted message
         const messageData = message.toObject();
         messageData.content = content;
-    messageData.senderId = senderId; // Add senderId to the broadcasted message
+        // Add the senderId ONLY for the broadcast, so clients know who sent it.
+        messageData.senderId = senderId;
         delete messageData.encrypted_content;
 
         io.to(conversationId).emit('receive_message', messageData);
@@ -98,21 +110,27 @@ io.on('connection', (socket) => {
 
     socket.on('edit_message', async (data) => {
         try {
-            const message = await Message.findById(data.messageId);
-            if (message) {
-                const conversation = await Conversation.findById(message.conversationId).select('+conversationKey');
-                if (conversation) {
-                    message.ciphertextPayload = encryptSymmetric(data.content, conversation.conversationKey);
-                    message.edited = true;
-                    await message.save();
+            const { messageId, content } = data;
+            const message = await Message.findById(messageId);
+            if (!message) return;
 
-                    const messageData = message.toObject();
-                    messageData.content = data.content;
-                    delete messageData.encrypted_content;
-
-                    io.to(message.conversationId.toString()).emit('message_edited', messageData);
-                }
+            // **SECURITY FIX**: Authorization check
+            const conversation = await Conversation.findOne({ _id: message.conversationId, participants: socket.userId }).select('+conversationKey');
+            if (!conversation) {
+                 console.log(`SECURITY: User ${socket.userId} tried to edit a message in a conversation they are not part of.`);
+                 return;
             }
+
+            message.ciphertextPayload = encryptSymmetric(content, conversation.conversationKey);
+            message.edited = true;
+            await message.save();
+
+            const messageData = message.toObject();
+            messageData.content = data.content;
+            delete messageData.encrypted_content;
+
+            io.to(message.conversationId.toString()).emit('message_edited', messageData);
+
         } catch (error) {
             console.error('Failed to edit message:', error);
         }
@@ -120,22 +138,27 @@ io.on('connection', (socket) => {
 
     socket.on('delete_message', async (data) => {
         try {
-            const message = await Message.findById(data.messageId);
-            if (message) {
-                const conversationId = message.conversationId.toString();
-                await message.deleteOne();
-                io.to(conversationId).emit('message_deleted', { messageId: data.messageId });
+            const { messageId } = data;
+            const message = await Message.findById(messageId);
+            if (!message) return;
+
+            // **SECURITY FIX**: Authorization check
+            const conversation = await Conversation.findOne({ _id: message.conversationId, participants: socket.userId });
+             if (!conversation) {
+                 console.log(`SECURITY: User ${socket.userId} tried to delete a message in a conversation they are not part of.`);
+                 return;
             }
+
+            const conversationId = message.conversationId.toString();
+            await message.deleteOne();
+            io.to(conversationId).emit('message_deleted', { messageId });
+
         } catch (error) {
             console.error('Failed to delete message:', error);
         }
     });
 
-    socket.on('go_online', (userId) => {
-        onlineUsers[userId] = true;
-        socket.userId = userId;
-        io.emit('user_online', userId);
-    });
+    // **SECURITY FIX**: The insecure 'go_online' event handler has been removed.
 
     socket.on('disconnect', () => {
         // Clear the padding timeout timer to prevent memory leaks
@@ -147,7 +170,7 @@ io.on('connection', (socket) => {
             delete onlineUsers[socket.userId];
             io.emit('user_offline', socket.userId);
         }
-        console.log('user disconnected');
+        console.log('user disconnected:', socket.userId);
     });
 
     // Handle client-side padding traffic
