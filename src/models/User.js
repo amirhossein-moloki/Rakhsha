@@ -54,10 +54,18 @@ const UserSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     },
+    lastSecretPriceView: {
+        type: Date,
+        default: Date.now
+    },
     settings: {
         readReceiptsEnabled: {
             type: Boolean,
             default: false
+        },
+        secretPriceInterval: {
+            type: Number,
+            default: 12
         }
     }
 });
