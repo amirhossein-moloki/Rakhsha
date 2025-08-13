@@ -6,21 +6,20 @@ const path = require('path');
 const User = require('../src/models/User');
 const Conversation = require('../src/models/Conversation');
 const Node = require('../src/models/Node');
-const { encryptHybrid } = require('../src/utils/crypto');
+const { encryptHybrid, sign } = require('../src/utils/crypto');
 const axios = require('axios');
 
 jest.mock('axios');
 
-// This is a valid, real public key generated for the test environment.
 const testPublicKey = fs.readFileSync(path.join(__dirname, '..', 'test_public.pem'), 'utf-8');
 const testPrivateKey = fs.readFileSync(path.join(__dirname, '..', 'test_private.pem'), 'utf-8');
 
-// Set the private key in the environment for the decrypting part of the controller
 process.env.SERVER_PRIVATE_KEY = testPrivateKey;
+process.env.SERVER_ADDRESS = 'http://final.destination.com';
 
 
 describe('Mix Network E2E Tests', () => {
-    const { setup, teardown, createTestUser } = require('./setup');
+    const { setup, teardown, createTestUser, padRequest } = require('./setup');
     let user1, user2;
     let conversation;
     let node1, node2;
@@ -40,16 +39,15 @@ describe('Mix Network E2E Tests', () => {
 
         conversation = new Conversation({
             type: 'private',
-            participantIds: [user1._id, user2._id],
             encryptedMetadata: 'test-metadata',
             createdAt: new Date().toISOString()
         });
         await conversation.save();
 
         user1.conversations.push(conversation._id);
+        user1.identityKey = testPublicKey; // Use a known identity key for signing
         await user1.save();
 
-        // Create and register mock nodes
         node1 = new Node({
             nodeId: 'node1',
             address: 'http://node1.test.com',
@@ -65,49 +63,49 @@ describe('Mix Network E2E Tests', () => {
     });
 
     it('should route a message through a multi-node path', async () => {
-        // 1. Construct the final message payload
-        const messagePayload = {
+        const messageData = {
             conversationId: conversation._id.toString(),
             recipientId: user2._id.toString(),
             messageType: 'text',
             ciphertextPayload: 'encrypted-message-text',
-            encryptedTimestamp: new Date().toISOString()
         };
 
-        // 2. Create the onion using hybrid encryption
-        // Layer 3 (for the final destination - our server)
-        let finalPayload = JSON.stringify({
-            nextNodeAddress: 'self',
-            remainingPayload: JSON.stringify(messagePayload)
-        });
-        let onionLayer3 = encryptHybrid(finalPayload, testPublicKey);
+        const signature = sign(JSON.stringify(messageData), testPrivateKey);
+        const signedMessage = JSON.stringify({ messageData, signature });
 
-        // Layer 2 (for node2)
+        const finalPayload = JSON.stringify({
+            signedMessage: signedMessage,
+            senderIdentityKey: user1.identityKey
+        });
+
+        let onionLayer3Payload = JSON.stringify({
+            nextNodeAddress: 'self',
+            remainingPayload: finalPayload
+        });
+        let onionLayer3 = encryptHybrid(onionLayer3Payload, testPublicKey);
+
         let onionLayer2Payload = JSON.stringify({
-            nextNodeAddress: process.env.SERVER_ADDRESS, // The final destination
+            nextNodeAddress: process.env.SERVER_ADDRESS,
             remainingPayload: onionLayer3
         });
         let onionLayer2 = encryptHybrid(onionLayer2Payload, node2.publicKey);
 
-        // Layer 1 (for our server, acting as the first node)
         let onionLayer1Payload = JSON.stringify({
             nextNodeAddress: node2.address,
             remainingPayload: onionLayer2
         });
         let onionLayer1 = encryptHybrid(onionLayer1Payload, testPublicKey);
 
-        // 3. Mock the axios post calls
         axios.post.mockResolvedValue({ status: 200, data: { message: 'Message forwarded.' } });
 
-        // 4. Send the message to our server (the first node)
         const res = await request(app)
             .post('/api/messages/route')
-            .send({ onionPayload: onionLayer1 });
+            .set('Content-Type', 'application/json')
+            .send(padRequest({ onionPayload: onionLayer1 }));
 
         expect(res.statusCode).toBe(200);
         expect(res.body.message).toBe('Message forwarded.');
 
-        // 5. Verify that our server correctly decrypted its layer and forwarded to node2
         expect(axios.post).toHaveBeenCalledWith(
             node2.address + '/api/messages/route',
             { onionPayload: onionLayer2 }

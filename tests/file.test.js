@@ -14,7 +14,7 @@ describe('File Upload Routes', () => {
     let userId;
     let conversation;
 
-    const { setup, teardown, createTestUser } = require('./setup');
+    const { setup, teardown, createTestUser, padRequest } = require('./setup');
     beforeAll(async () => {
         await fs.mkdir(UPLOADS_DIR, { recursive: true });
         await setup();
@@ -36,7 +36,12 @@ describe('File Upload Routes', () => {
         userId = user._id;
 
         const loginData = { login: 'fileuser', password: 'password' };
-        const resLogin = await request(app).post('/api/auth/login').send(loginData);
+        const resLogin = await request(app)
+            .post('/api/auth/login')
+            .set('Content-Type', 'application/json')
+            .send(padRequest(loginData));
+
+        expect(resLogin.statusCode).toBe(200);
         token = resLogin.body.token;
 
         conversation = new Conversation({
@@ -60,7 +65,6 @@ describe('File Upload Routes', () => {
             .field('conversationId', conversation._id.toString())
             .field('encryptedFilename', 'test-file-encrypted.txt')
             .field('encryptedKeyInfo', 'some-key-info')
-            .field('padding', 'a'.repeat(4000)) // Add padding
             .attach('file', filePath);
 
         expect(res.statusCode).toBe(201);
@@ -71,6 +75,6 @@ describe('File Upload Routes', () => {
         expect(file).not.toBeNull();
         expect(file.conversationId.toString()).toBe(conversation._id.toString());
 
-        await fs.unlink(filePath); // Clean up the test file
+        await fs.unlink(filePath);
     });
 });

@@ -40,3 +40,28 @@ module.exports.createTestUser = async (username, password) => {
     await user.save();
     return user;
 };
+
+const PADDING_SIZE = 4096; // As defined in requestPadding.js
+
+// Helper to pad request data to a fixed size for testing the padding middleware
+module.exports.padRequest = (data) => {
+    // For GET requests or requests with no body, data might be undefined or null.
+    if (!data) {
+        return '';
+    }
+    const dataString = JSON.stringify(data);
+    const paddingNeeded = PADDING_SIZE - Buffer.byteLength(dataString, 'utf8');
+    if (paddingNeeded < 0) {
+        throw new Error(`Test data is larger than PADDING_SIZE: ${dataString}`);
+    }
+    // We append a padding property. The server will ignore this, but it pads the request size.
+    const paddedData = { ...data, _padding: 'a'.repeat(paddingNeeded) };
+    // Re-stringify to check final size, adjust if necessary
+    let finalString = JSON.stringify(paddedData);
+    let finalPadding = PADDING_SIZE - Buffer.byteLength(finalString, 'utf8');
+    if (finalPadding < 0) {
+       paddedData._padding = 'a'.repeat(paddingNeeded + finalPadding);
+       finalString = JSON.stringify(paddedData);
+    }
+    return finalString;
+};
