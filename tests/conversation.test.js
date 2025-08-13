@@ -11,7 +11,7 @@ describe('Conversation Routes', () => {
     let userId;
     let user;
 
-    const { setup, teardown, createTestUser } = require('./setup');
+    const { setup, teardown, createTestUser, padRequest } = require('./setup');
     beforeAll(setup);
     afterAll(teardown);
 
@@ -20,30 +20,24 @@ describe('Conversation Routes', () => {
         await Conversation.deleteMany({});
         await Message.deleteMany({});
 
-        // Using real argon2 now, so we provide a real password
         user = await createTestUser('testuser', 'password123');
         await user.save();
         userId = user._id;
 
-        const PADDING_SIZE = 4096;
         const loginData = {
-            login: 'testuser', // Use login field as per controller
+            login: 'testuser',
             password: 'password123'
         };
-        const loginDataString = JSON.stringify(loginData);
-        const loginPaddingNeeded = PADDING_SIZE - loginDataString.length;
-        if (loginPaddingNeeded > 0) {
-            loginData.padding = 'a'.repeat(loginPaddingNeeded);
-        }
 
         const resLogin = await request(app)
             .post('/api/auth/login')
-            .send(loginData);
+            .set('Content-Type', 'application/json')
+            .send(padRequest(loginData));
 
-        // Check if login was successful before getting the token
         if (resLogin.statusCode !== 200) {
             console.error('Login failed in test setup:', resLogin.body);
         }
+        expect(resLogin.statusCode).toBe(200);
         token = resLogin.body.token;
     });
 
@@ -59,7 +53,6 @@ describe('Conversation Routes', () => {
         const participantIds = [userId.toString(), otherUser._id.toString()];
         const participants = participantIds.map(id => encryptSymmetric(id, conversationKey));
 
-        const PADDING_SIZE = 4096; // 4 KB
         const conversationData = {
             type: 'private',
             encryptedMetadata: JSON.stringify({ name: encryptedName, participants }),
@@ -68,17 +61,11 @@ describe('Conversation Routes', () => {
             conversationKey: conversationKey,
         };
 
-        const dataString = JSON.stringify(conversationData);
-        const paddingNeeded = PADDING_SIZE - dataString.length;
-
-        if (paddingNeeded > 0) {
-            conversationData.padding = 'a'.repeat(paddingNeeded);
-        }
-
         const res = await request(app)
             .post('/api/conversations')
             .set('Authorization', `Bearer ${token}`)
-            .send(conversationData);
+            .set('Content-Type', 'application/json')
+            .send(padRequest(conversationData));
 
         expect(res.statusCode).toEqual(201);
         expect(res.body).toHaveProperty('encryptedMetadata', conversationData.encryptedMetadata);
@@ -91,11 +78,9 @@ describe('Conversation Routes', () => {
         const decryptedMetadata = JSON.parse(conversation.encryptedMetadata);
         expect(decryptSymmetric(decryptedMetadata.name, conversation.conversationKey)).toEqual(conversationName);
 
-        // Check that the conversation is in the user's list of conversations
         const updatedUser = await User.findById(userId);
         expect(updatedUser.conversations).toContainEqual(conversation._id);
 
-        // Check getConversations endpoint
         const getConvosRes = await request(app)
             .get('/api/conversations')
             .set('Authorization', `Bearer ${token}`);

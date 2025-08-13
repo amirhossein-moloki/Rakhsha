@@ -1,20 +1,10 @@
 const request = require('supertest');
 const app = require('../src/app');
-
-const PADDING_SIZE = 4096;
-const padRequest = (data) => {
-    const dataString = JSON.stringify(data);
-    const paddingNeeded = PADDING_SIZE - dataString.length;
-    if (paddingNeeded > 0) {
-        return { ...data, padding: 'a'.repeat(paddingNeeded) };
-    }
-    return data;
-};
 const mongoose = require('mongoose');
 const Node = require('../src/models/Node');
 
 describe('Node Management Routes', () => {
-    const { setup, teardown } = require('./setup');
+    const { setup, teardown, padRequest } = require('./setup');
     beforeAll(setup);
     afterAll(teardown);
 
@@ -30,6 +20,7 @@ describe('Node Management Routes', () => {
 
         const res = await request(app)
             .post('/api/nodes/register')
+            .set('Content-Type', 'application/json')
             .send(padRequest(nodeData));
 
         expect(res.statusCode).toBe(201);

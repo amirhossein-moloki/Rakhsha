@@ -3,30 +3,14 @@ const app = require('../src/app');
 const mongoose = require('mongoose');
 const User = require('../src/models/User');
 
-// Mock argon2 for tests with a more realistic implementation
+// Mock argon2 for tests
 jest.mock('argon2', () => ({
-    verify: jest.fn((hash, plain) => {
-        // This mock simulates verification by checking if the hash is the 'hashed_' version of the plain password.
-        // This makes our login tests more realistic.
-        return Promise.resolve(hash === `hashed_${plain}`);
-    }),
+    verify: jest.fn((hash, plain) => Promise.resolve(hash === `hashed_${plain}`)),
     hash: jest.fn(plain => Promise.resolve(`hashed_${plain}`)),
 }));
 
-const PADDING_SIZE = 4096; // As defined in requestPadding.js
-
-// Helper to pad request data
-const padRequest = (data) => {
-    const dataString = JSON.stringify(data);
-    const paddingNeeded = PADDING_SIZE - dataString.length;
-    if (paddingNeeded > 0) {
-        return { ...data, padding: 'a'.repeat(paddingNeeded) };
-    }
-    return data;
-};
-
 describe('Auth Routes', () => {
-    const { setup, teardown, createTestUser } = require('./setup');
+    const { setup, teardown, createTestUser, padRequest } = require('./setup');
 
     beforeAll(setup);
 
@@ -46,6 +30,7 @@ describe('Auth Routes', () => {
 
             const res = await request(app)
                 .post('/api/auth/register')
+                .set('Content-Type', 'application/json')
                 .send(padRequest(userData));
 
             expect(res.statusCode).toBe(201);
@@ -58,12 +43,10 @@ describe('Auth Routes', () => {
         });
 
         it('should not create a new user with a duplicate email', async () => {
-            // 1. Create an existing user
             const existingUser = await createTestUser('existinguser', 'password123');
             existingUser.email = 'test@example.com';
             await existingUser.save();
 
-            // 2. Try to register a new user with the same email
             const newUserData = {
                 username: 'newuser',
                 email: 'test@example.com',
@@ -71,12 +54,11 @@ describe('Auth Routes', () => {
             };
             const res = await request(app)
                 .post('/api/auth/register')
+                .set('Content-Type', 'application/json')
                 .send(padRequest(newUserData));
 
-            // 3. Assert that the response is still 201 (to prevent enumeration)
             expect(res.statusCode).toBe(201);
 
-            // 4. Assert that no new user was created
             const users = await User.find({ email: 'test@example.com' }).lean();
             expect(users.length).toBe(1);
             expect(users[0].username).toBe('existinguser');
@@ -85,9 +67,8 @@ describe('Auth Routes', () => {
 
     describe('POST /api/auth/login', () => {
         beforeEach(async () => {
-            // Use the test helper to create a user with all required fields
             const user = await createTestUser('loginuser', 'password123');
-            user.email = 'login@example.com'; // Add email for login
+            user.email = 'login@example.com';
             await user.save();
         });
 
@@ -99,6 +80,7 @@ describe('Auth Routes', () => {
 
             const res = await request(app)
                 .post('/api/auth/login')
+                .set('Content-Type', 'application/json')
                 .send(padRequest(loginData));
 
             expect(res.statusCode).toBe(200);
@@ -111,9 +93,9 @@ describe('Auth Routes', () => {
                 password: 'wrongpassword'
             };
 
-            // The improved mock will automatically handle this, as 'hashed_password123' !== 'hashed_wrongpassword'
             const res = await request(app)
                 .post('/api/auth/login')
+                .set('Content-Type', 'application/json')
                 .send(padRequest(loginData));
 
             expect(res.statusCode).toBe(401);
@@ -123,20 +105,20 @@ describe('Auth Routes', () => {
 
     describe('User Profile', () => {
         it('should create a user, log them in, and fetch their profile successfully', async () => {
-            // Step 1: Create a user
             const user = await createTestUser('profile_user', 'password123');
             user.email = 'profile@example.com';
             await user.save();
             const userId = user._id;
 
-            // Step 2: Login to get a token
             const loginData = { login: 'profile_user', password: 'password123' };
-            const loginRes = await request(app).post('/api/auth/login').send(padRequest(loginData));
+            const loginRes = await request(app)
+                .post('/api/auth/login')
+                .set('Content-Type', 'application/json')
+                .send(padRequest(loginData));
             const token = loginRes.body.token;
             expect(loginRes.statusCode).toBe(200);
             expect(token).toBeDefined();
 
-            // Step 3: Fetch the user profile with the token
             const profileRes = await request(app)
                 .get('/api/auth/me')
                 .set('Authorization', `Bearer ${token}`)
