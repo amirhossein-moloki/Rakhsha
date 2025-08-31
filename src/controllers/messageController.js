@@ -46,7 +46,12 @@ exports.sendMessage = asyncHandler(async (req, res) => {
     if (io) {
         // The client-side should be listening for the 'receive_message' event
         // in the specific conversation room.
-        io.to(conversationId).emit('receive_message', message);
+        // We include the sender's identity key so the client knows which session to use for decryption.
+        // This does not violate sealed sender as it's not stored in the DB.
+        io.to(conversationId).emit('receive_message', {
+            ...message.toObject(),
+            senderIdentityKey: req.user.identityKey
+        });
     }
 
     res.status(201).send(message);

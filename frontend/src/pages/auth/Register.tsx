@@ -1,52 +1,31 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { generateIdentity } from '@/lib/crypto';
-import api from '@/api/axios';
+import useAuthStore from '@/store/authStore';
 import { useNavigate } from 'react-router-dom';
 
 const schema = z.object({
-  username: z.string().min(3),
-  email: z.string().email(),
-  password: z.string().min(8),
+  username: z.string().min(3, 'Username must be at least 3 characters'),
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
 type FormData = z.infer<typeof schema>;
 
 export default function Register() {
   const navigate = useNavigate();
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+  const { register: registerUser } = useAuthStore();
+  const { register, handleSubmit, formState: { errors }, setError } = useForm<FormData>({
     resolver: zodResolver(schema),
   });
 
   const onSubmit = async (data: FormData) => {
     try {
-      const identity = await generateIdentity();
-      const publicKeys = {
-        identityKey: Buffer.from(identity.identityKey).toString('hex'),
-        signedPreKey: {
-          keyId: identity.signedPreKey.keyId,
-          publicKey: Buffer.from(identity.signedPreKey.publicKey).toString('hex'),
-          signature: Buffer.from(identity.signedPreKey.signature).toString('hex'),
-        },
-        oneTimePreKeys: identity.oneTimePreKeys.map(k => ({
-            keyId: k.keyId,
-            publicKey: Buffer.from(k.publicKey).toString('hex'),
-        })),
-      };
-
-      await api.post('/auth/register', {
-        ...data,
-        ...publicKeys,
-      });
-
-      // Store the private keys in the auth store.
-      // This is NOT secure and should not be used in production.
-      const { setPrivateKeys } = useAuthStore.getState();
-      setPrivateKeys(identity._private);
-
+      await registerUser(data.username, data.email, data.password);
+      alert('Registration successful! Please login.');
       navigate('/login');
     } catch (error) {
+      setError('root', { message: 'Registration failed. Please try again.' });
       console.error('Registration failed:', error);
     }
   };
@@ -56,6 +35,7 @@ export default function Register() {
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
         <h2 className="text-2xl font-bold text-center">Register</h2>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          {errors.root && <p className="text-sm text-center text-red-500">{errors.root.message}</p>}
           <div>
             <label className="block text-sm font-medium">Username</label>
             <input {...register('username')} className="w-full px-3 py-2 mt-1 border rounded-md" />
