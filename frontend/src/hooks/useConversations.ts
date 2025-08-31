@@ -5,11 +5,14 @@ import useConversationStore from '@/store/conversationStore';
 
 export default function useConversations() {
   const { token } = useAuthStore();
-  const { setConversations } = useConversationStore();
+  const { setConversations, setLoading } = useConversationStore();
 
   useEffect(() => {
     const fetchConversations = async () => {
-      if (!token) return;
+      if (!token) {
+        setLoading(false);
+        return;
+      }
       try {
         const response = await api.get('/conversations', {
           headers: { Authorization: `Bearer ${token}` },
@@ -17,9 +20,11 @@ export default function useConversations() {
         setConversations(response.data);
       } catch (error) {
         console.error('Failed to fetch conversations:', error);
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchConversations();
-  }, [token, setConversations]);
+  }, [token, setConversations, setLoading]);
 }
