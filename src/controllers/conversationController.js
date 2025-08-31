@@ -127,3 +127,72 @@ exports.unhideConversation = asyncHandler(async (req, res) => {
     await updateHiddenState(conversationId, req.user, false);
     res.status(200).send({ message: 'Conversation unhidden successfully.' });
 });
+
+/**
+ * @description Edit a message
+ * @route PUT /api/conversations/messages/:messageId
+ * @access Private
+ */
+exports.editMessage = asyncHandler(async (req, res) => {
+    const { messageId } = req.params;
+    const { content } = req.body;
+    const userId = req.user._id;
+
+    const message = await Message.findById(messageId);
+
+    if (!message) {
+        return res.status(404).send({ error: 'Message not found.' });
+    }
+
+    // In the E2EE model, the server can't know the original sender.
+    // The authorization to edit should be based on participation in the conversation.
+    const conversation = await Conversation.findOne({ _id: message.conversationId });
+    if (!conversation) {
+        return res.status(404).send({ error: 'Conversation not found.' });
+    }
+
+    // The auth check relies on the user object populated by the auth middleware
+    if (!req.user.conversations.map(id => id.toString()).includes(message.conversationId.toString())) {
+        return res.status(403).send({ error: 'Forbidden: You are not a participant of this conversation.' });
+    }
+
+    message.ciphertextPayload = content; // The client sends the new encrypted content
+    message.edited = true;
+    await message.save();
+
+    // Broadcast the edited message via WebSocket
+    const io = req.app.get('socketio');
+    io.to(message.conversationId.toString()).emit('message_edited', message);
+
+    res.status(200).send(message);
+});
+
+/**
+ * @description Delete a message
+ * @route DELETE /api/conversations/messages/:messageId
+ * @access Private
+ */
+exports.deleteMessage = asyncHandler(async (req, res) => {
+    const { messageId } = req.params;
+    const userId = req.user._id;
+
+    const message = await Message.findById(messageId);
+
+    if (!message) {
+        return res.status(404).send({ error: 'Message not found.' });
+    }
+
+    // Authorization check: User must be a participant in the conversation.
+    if (!req.user.conversations.map(id => id.toString()).includes(message.conversationId.toString())) {
+        return res.status(403).send({ error: 'Forbidden: You are not a participant of this conversation.' });
+    }
+
+    const conversationId = message.conversationId.toString();
+    await message.deleteOne();
+
+    // Broadcast the deleted message ID via WebSocket
+    const io = req.app.get('socketio');
+    io.to(conversationId).emit('message_deleted', { messageId, conversationId });
+
+    res.status(200).send({ message: 'Message deleted successfully.' });
+});

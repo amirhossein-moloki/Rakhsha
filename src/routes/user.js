@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { uploadKeys, getPreKeyBundleForUser, getUserFingerprint, updateUserSettings, setSecondaryPassword, openSecretPrice, deleteMe, deleteSecretData } = require('../controllers/userController');
+const { getUsers, uploadKeys, getPreKeyBundleForUser, getUserFingerprint, updateUserSettings, setSecondaryPassword, openSecretPrice, deleteMe, deleteSecretData } = require('../controllers/userController');
 const authMiddleware = require('../middleware/auth');
 
 // All routes in this file are protected
 router.use(authMiddleware);
+
+// Route to get all users
+router.get('/', getUsers);
 
 // Route to delete the authenticated user's account
 router.delete('/me', deleteMe);
