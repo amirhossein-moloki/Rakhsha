@@ -5,7 +5,7 @@ import useAuthStore from '@/store/authStore';
 import NewConversationModal from './NewConversationModal';
 
 import { decryptConversationMetadata } from '@/lib/crypto';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface ConversationListProps {
   onSelectConversation: (id: string) => void;
@@ -13,22 +13,37 @@ interface ConversationListProps {
 
 export default function ConversationList({ onSelectConversation }: ConversationListProps) {
   useConversations(); // Fetches conversations and populates the store
-  const { conversations, setConversations } = useConversationStore();
+  const { conversations, setConversations, loading } = useConversationStore();
   const { token } = useAuthStore();
   const [decrypted, setDecrypted] = useState<any>({});
   const [showHidden, setShowHidden] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const handleDecrypt = async (convo: any) => {
-    try {
+  // Auto-decrypt metadata when conversations load/change
+  useEffect(() => {
+    const decryptAll = async () => {
       // THIS IS A PLACEHOLDER KEY. In a real app, this key would be securely retrieved.
       const placeholderKey = Buffer.from('0123456789abcdef0123456789abcdef');
-      const metadata = await decryptConversationMetadata(convo.encryptedMetadata, placeholderKey);
-      setDecrypted((prev: any) => ({ ...prev, [convo._id]: metadata }));
-    } catch (error) {
-      console.error('Failed to decrypt metadata:', error);
+      const newDecrypted: any = {};
+      for (const convo of conversations) {
+        if (!decrypted[convo._id]) { // Only decrypt if not already done
+          try {
+            const metadata = await decryptConversationMetadata(convo.encryptedMetadata, placeholderKey);
+            newDecrypted[convo._id] = metadata;
+          } catch (error) {
+            console.error('Failed to decrypt metadata for convo:', convo._id, error);
+            // Provide a user-friendly fallback name
+            newDecrypted[convo._id] = { name: `Conversation ${convo._id.slice(-6)}`, participants: [] };
+          }
+        }
+      }
+      setDecrypted(prev => ({ ...prev, ...newDecrypted }));
+    };
+
+    if (conversations.length > 0) {
+      decryptAll();
     }
-  };
+  }, [conversations, decrypted]);
 
   const handleHide = async (id: string, hide: boolean) => {
     try {
@@ -45,69 +60,63 @@ export default function ConversationList({ onSelectConversation }: ConversationL
   const filteredConversations = conversations.filter(c => showHidden ? c.isHidden : !c.isHidden);
 
   return (
-    <div className="p-4">
-      <div className="flex justify-between items-center">
+    <div className="p-4 h-full flex flex-col">
+      <div className="flex justify-between items-center mb-4 flex-shrink-0">
         <h2 className="text-xl font-bold">Conversations</h2>
         <div>
-          <button onClick={() => setIsModalOpen(true)} className="mr-2 text-sm text-blue-500">
+          <button onClick={() => setIsModalOpen(true)} className="mr-4 text-sm font-semibold text-blue-600 hover:text-blue-800">
             New
           </button>
-          <button onClick={() => setShowHidden(!showHidden)} className="text-sm text-blue-500">
+          <button onClick={() => setShowHidden(!showHidden)} className="text-sm font-semibold text-blue-600 hover:text-blue-800">
             {showHidden ? 'Show Normal' : 'Show Hidden'}
           </button>
         </div>
       </div>
       <NewConversationModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
-      <ul>
-        {filteredConversations.map((convo) => (
-          <li
-            key={convo._id}
-            className="p-2 my-2 border rounded-md cursor-pointer hover:bg-gray-200"
-            onClick={() => onSelectConversation(convo._id)}
-          >
-            <p className="font-bold">Conversation ID: {convo._id}</p>
-            {decrypted[convo._id] ? (
-              <div>
-                <p>Name: {decrypted[convo._id].name}</p>
-                <p>Participants: {decrypted[convo._id].participants.join(', ')}</p>
-              </div>
-            ) : (
-              <p className="text-sm text-gray-600 truncate">
-                Encrypted Metadata: {convo.encryptedMetadata}
-              </p>
-            )}
-            <div className="flex mt-2 space-x-2">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDecrypt(convo);
-                }}
-                className="px-2 py-1 text-xs text-white bg-blue-500 rounded"
+      <div className="flex-grow overflow-y-auto">
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-gray-500">Loading conversations...</p>
+          </div>
+        ) : filteredConversations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center text-gray-500">
+            <p>No {showHidden ? 'hidden' : ''} conversations found.</p>
+            <button onClick={() => setIsModalOpen(true)} className="mt-2 text-sm font-semibold text-blue-600 hover:text-blue-800">
+              Start a new one
+            </button>
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {filteredConversations.map((convo) => (
+              <li
+                key={convo._id}
+                className="p-3 flex items-center justify-between rounded-lg cursor-pointer hover:bg-gray-100 transition-colors duration-200"
+                onClick={() => onSelectConversation(convo._id)}
               >
-                Decrypt
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleHide(convo._id, true);
-                }}
-                className="px-2 py-1 text-xs text-white bg-gray-500 rounded"
-              >
-                Hide
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleHide(convo._id, false);
-                }}
-                className="px-2 py-1 text-xs text-white bg-gray-500 rounded"
-              >
-                Unhide
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
+                <div className="flex items-center overflow-hidden">
+                    {/* Placeholder Icon */}
+                    <div className="w-10 h-10 bg-gray-300 rounded-full mr-3 flex-shrink-0"></div>
+                    <div className="truncate">
+                        <p className="font-semibold text-gray-800 truncate">
+                            {decrypted[convo._id] ? decrypted[convo._id].name : 'Loading...'}
+                        </p>
+                    </div>
+                </div>
+                {/* Simplified Hide/Unhide button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent li's onClick from firing
+                    handleHide(convo._id, !convo.isHidden);
+                  }}
+                  className="px-3 py-1 text-xs font-semibold text-gray-600 bg-gray-200 rounded-full hover:bg-gray-300 ml-2 flex-shrink-0"
+                >
+                  {convo.isHidden ? 'Unhide' : 'Hide'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
