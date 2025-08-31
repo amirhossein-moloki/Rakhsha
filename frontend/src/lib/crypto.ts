@@ -1,70 +1,110 @@
-import { KeyHelper, SignedPublicPreKeyType, PublicPreKeyType, KeyPairType, SessionBuilder, SessionCipher, SignalProtocolAddress } from '@privacyresearch/libsignal-protocol-typescript';
-import { InMemorySignalProtocolStore } from './InMemorySignalProtocolStore';
+import { KeyHelper, KeyPairType, SessionBuilder, SessionCipher, SignalProtocolAddress } from '@privacyresearch/libsignal-protocol-typescript';
+import { PersistentSignalProtocolStore } from './PersistentSignalProtocolStore';
 import { Buffer } from 'buffer';
+import useAuthStore from '@/store/authStore';
+import useUserStore from '@/store/userStore';
+import api from '@/api/axios';
 
-// This is a placeholder for the registration ID.
-// In a real app, this would be generated once and stored.
-const registrationId = KeyHelper.generateRegistrationId();
+let signalStore: PersistentSignalProtocolStore | null = null;
+
+export function getSignalStore(): PersistentSignalProtocolStore {
+    if (!signalStore) {
+        const { privateKeys } = useAuthStore.getState();
+        if (!privateKeys) {
+            throw new Error("Private keys not available in auth store. Cannot initialize Signal store.");
+        }
+        // The privateKeys object stored during registration needs to be structured correctly
+        const { identityKeyPair, registrationId } = privateKeys;
+        signalStore = new PersistentSignalProtocolStore(identityKeyPair, registrationId);
+
+        // Load pre-keys into the store
+        privateKeys.preKeys.forEach((p: KeyPairType) => {
+            signalStore?.storePreKey(p.keyId, p);
+        });
+        signalStore.storeSignedPreKey(privateKeys.signedPreKey.keyId, privateKeys.signedPreKey);
+    }
+    return signalStore;
+}
 
 export async function generateIdentity() {
-  const identityKeyPair = await KeyHelper.generateIdentityKeyPair();
-  // The signed pre-key ID should be a random integer.
-  const signedPreKeyId = Math.floor(Math.random() * 10000);
-  const signedPreKey = await KeyHelper.generateSignedPreKey(identityKeyPair, signedPreKeyId);
+    const registrationId = KeyHelper.generateRegistrationId();
+    const identityKeyPair = await KeyHelper.generateIdentityKeyPair();
+    const signedPreKeyId = Math.floor(Math.random() * 10000);
+    const signedPreKey = await KeyHelper.generateSignedPreKey(identityKeyPair, signedPreKeyId);
 
-  const preKeys: KeyPairType[] = [];
-  // Generate 100 one-time pre-keys
-  for (let i = 0; i < 100; i++) {
-    // The pre-key ID should be a random integer.
-    const preKeyId = Math.floor(Math.random() * 10000);
-    const preKey = await KeyHelper.generatePreKey(preKeyId);
-    preKeys.push(preKey);
-  }
-
-  const publicOneTimePreKeys = preKeys.map(p => p.public);
-
-  return {
-    registrationId,
-    identityKey: identityKeyPair.pubKey,
-    signedPreKey: {
-      keyId: signedPreKey.keyId,
-      publicKey: signedPreKey.pubKey,
-      signature: signedPreKey.signature,
-    },
-    oneTimePreKeys: publicOneTimePreKeys,
-    _private: {
-      identityKeyPair,
-      preKeys,
-      signedPreKey,
+    const preKeys: KeyPairType[] = [];
+    for (let i = 0; i < 100; i++) {
+        const preKeyId = Math.floor(Math.random() * 10000);
+        const preKey = await KeyHelper.generatePreKey(preKeyId);
+        preKeys.push(preKey);
     }
-  };
+
+    return {
+        _private: {
+            identityKeyPair,
+            registrationId,
+            preKeys,
+            signedPreKey,
+        },
+        public: {
+            identityKey: Buffer.from(identityKeyPair.pubKey).toString('hex'),
+            registrationId,
+            signedPreKey: {
+                keyId: signedPreKey.keyId,
+                publicKey: Buffer.from(signedPreKey.pubKey).toString('hex'),
+                signature: Buffer.from(signedPreKey.signature).toString('hex'),
+            },
+            oneTimePreKeys: preKeys.map(p => ({
+                keyId: p.keyId,
+                publicKey: Buffer.from(p.pubKey).toString('hex'),
+            })),
+        }
+    };
 }
 
-export function createStore(identity: any) {
-    const store = new InMemorySignalProtocolStore(identity._private.identityKeyPair, identity.registrationId);
-    identity._private.preKeys.forEach((p: KeyPairType) => {
-        store.storePreKey(p.keyId, p);
-    });
-    store.storeSignedPreKey(identity._private.signedPreKey.keyId, identity._private.signedPreKey);
-    return store;
-}
+async function buildSession(recipientId: string) {
+    const store = getSignalStore();
+    const { users } = useUserStore.getState();
+    const recipient = users.find(u => u._id === recipientId);
 
-export async function buildSession(store: InMemorySignalProtocolStore, preKeyBundle: any) {
+    if (!recipient || !recipient.username) {
+        throw new Error(`Recipient ${recipientId} not found or has no username.`);
+    }
+
+    // Fetch pre-key bundle from the server
+    const { data: preKeyBundle } = await api.get(`/users/${recipient.username}/pre-key-bundle`);
+
     const recipientAddress = new SignalProtocolAddress(preKeyBundle.identityKey, preKeyBundle.registrationId);
     const sessionBuilder = new SessionBuilder(store, recipientAddress);
     await sessionBuilder.processPreKey(preKeyBundle);
 }
 
-export async function encryptMessage(store: InMemorySignalProtocolStore, recipientId: string, message: string) {
-    const recipientAddress = new SignalProtocolAddress(recipientId, 1); // registrationId is not available here, using a placeholder
+export async function encryptMessage(recipientId: string, message: string) {
+    const store = getSignalStore();
+    const { users } = useUserStore.getState();
+    const recipient = users.find(u => u._id === recipientId);
+    if (!recipient || !recipient.identityKey) {
+        throw new Error(`Recipient ${recipientId} not found or has no identity key.`);
+    }
+
+    const recipientAddress = new SignalProtocolAddress(recipient.identityKey, recipient.registrationId);
     const sessionCipher = new SessionCipher(store, recipientAddress);
+
+    // Check if a session exists. If not, build one.
+    const sessionExists = await store.loadSession(recipientAddress.toString());
+    if (!sessionExists) {
+        await buildSession(recipientId);
+    }
+
     const ciphertext = await sessionCipher.encrypt(Buffer.from(message, 'utf8'));
     return ciphertext;
 }
 
-export async function decryptMessage(store: InMemorySignalProtocolStore, senderId: string, ciphertext: any) {
-    const senderAddress = new SignalProtocolAddress(senderId, 1); // registrationId is not available here, using a placeholder
+export async function decryptMessage(senderIdentityKey: string, registrationId: number, ciphertext: any) {
+    const store = getSignalStore();
+    const senderAddress = new SignalProtocolAddress(senderIdentityKey, registrationId);
     const sessionCipher = new SessionCipher(store, senderAddress);
+
     let plaintext: ArrayBuffer;
     if (ciphertext.type === 3) { // PreKeyWhisperMessage
         plaintext = await sessionCipher.decryptPreKeyWhisperMessage(ciphertext.body, 'binary');
@@ -72,29 +112,4 @@ export async function decryptMessage(store: InMemorySignalProtocolStore, senderI
         plaintext = await sessionCipher.decryptWhisperMessage(ciphertext.body, 'binary');
     }
     return Buffer.from(plaintext).toString('utf8');
-}
-
-async function importConversationKey(key: Buffer): Promise<CryptoKey> {
-    return crypto.subtle.importKey(
-        'raw',
-        key,
-        { name: 'AES-GCM' },
-        false,
-        ['encrypt', 'decrypt']
-    );
-}
-
-export async function decryptConversationMetadata(encryptedMetadata: string, conversationKey: Buffer) {
-    const [ivHex, ciphertextHex] = encryptedMetadata.split(':');
-    const iv = Buffer.from(ivHex, 'hex');
-    const ciphertext = Buffer.from(ciphertextHex, 'hex');
-    const key = await importConversationKey(conversationKey);
-
-    const decrypted = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv },
-        key,
-        ciphertext
-    );
-
-    return JSON.parse(Buffer.from(decrypted).toString('utf8'));
 }

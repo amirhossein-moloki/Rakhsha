@@ -1,37 +1,29 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import api from '@/api/axios';
 import useAuthStore from '@/store/authStore';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 const schema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
 type FormData = z.infer<typeof schema>;
 
 export default function Login() {
   const navigate = useNavigate();
-  const { setToken, setUser } = useAuthStore();
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+  const { login } = useAuthStore();
+  const { register, handleSubmit, formState: { errors }, setError } = useForm<FormData>({
     resolver: zodResolver(schema),
   });
 
   const onSubmit = async (data: FormData) => {
     try {
-      const response = await api.post('/auth/login', data);
-      const { token } = response.data;
-      setToken(token);
-
-      const meResponse = await api.get('/auth/me', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setUser(meResponse.data);
-
+      await login(data.email, data.password);
       navigate('/');
     } catch (error) {
+      setError('root', { message: 'Login failed. Please check your credentials.' });
       console.error('Login failed:', error);
     }
   };
@@ -41,6 +33,7 @@ export default function Login() {
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
         <h2 className="text-2xl font-bold text-center">Login</h2>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          {errors.root && <p className="text-sm text-center text-red-500">{errors.root.message}</p>}
           <div>
             <label className="block text-sm font-medium">Email</label>
             <input {...register('email')} className="w-full px-3 py-2 mt-1 border rounded-md" />
@@ -53,6 +46,11 @@ export default function Login() {
           </div>
           <button type="submit" className="w-full px-4 py-2 font-bold text-white bg-blue-500 rounded-md">Login</button>
         </form>
+        <div className="text-sm text-center">
+          <Link to="/secret-login" className="font-medium text-purple-600 hover:text-purple-500">
+            Access Secret Mode
+          </Link>
+        </div>
       </div>
     </div>
   );

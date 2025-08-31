@@ -4,11 +4,22 @@ import * as z from 'zod';
 import Modal from '@/components/common/Modal';
 import useUsers from '@/hooks/useUsers';
 import useUserStore from '@/store/userStore';
+import useConversationStore from '@/store/conversationStore';
+import useAuthStore from '@/store/authStore';
 import Select from 'react-select';
+import api from '@/api/axios';
 
 const schema = z.object({
-  name: z.string().min(3),
-  participants: z.array(z.string()).min(1),
+  name: z.string().optional(),
+  participants: z.array(z.string()).min(1, 'Please select at least one participant.'),
+}).refine(data => {
+  if (data.participants.length > 1) {
+    return data.name && data.name.length > 0;
+  }
+  return true;
+}, {
+  message: 'Conversation name is required for group chats.',
+  path: ['name'],
 });
 
 type FormData = z.infer<typeof schema>;
@@ -21,14 +32,28 @@ interface NewConversationModalProps {
 export default function NewConversationModal({ isOpen, onClose }: NewConversationModalProps) {
   useUsers();
   const { users } = useUserStore();
+  const { token } = useAuthStore();
+  const { addConversation } = useConversationStore();
   const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
   });
 
-  const onSubmit = (data: FormData) => {
-    console.log('New conversation data:', data);
-    // TODO: Implement the full conversation creation logic
-    onClose();
+  const onSubmit = async (data: FormData) => {
+    if (!token) return;
+    try {
+      const response = await api.post('/conversations', {
+        participants: data.participants,
+        type: data.participants.length > 1 ? 'group' : 'private',
+        name: data.name,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      addConversation(response.data);
+      onClose();
+    } catch (error) {
+      console.error('Failed to create conversation:', error);
+      // You might want to display an error to the user
+    }
   };
 
   const userOptions = users.map(u => ({ value: u._id, label: u.username }));
@@ -38,7 +63,7 @@ export default function NewConversationModal({ isOpen, onClose }: NewConversatio
       <h2 className="text-xl font-bold">New Conversation</h2>
       <form onSubmit={handleSubmit(onSubmit)} className="mt-4 space-y-4">
         <div>
-          <label className="block text-sm font-medium">Conversation Name</label>
+          <label className="block text-sm font-medium">Conversation Name (required for groups)</label>
           <Controller
             name="name"
             control={control}
