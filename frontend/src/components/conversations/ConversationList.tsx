@@ -2,6 +2,7 @@ import useConversations from '@/hooks/useConversations';
 import useConversationStore from '@/store/conversationStore';
 import api from '@/api/axios';
 import useAuthStore from '@/store/authStore';
+import NewConversationModal from './NewConversationModal';
 
 import { decryptConversationMetadata } from '@/lib/crypto';
 import { useState } from 'react';
@@ -16,6 +17,7 @@ export default function ConversationList({ onSelectConversation }: ConversationL
   const { token } = useAuthStore();
   const [decrypted, setDecrypted] = useState<any>({});
   const [showHidden, setShowHidden] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const handleDecrypt = async (convo: any) => {
     try {
@@ -46,10 +48,16 @@ export default function ConversationList({ onSelectConversation }: ConversationL
     <div className="p-4">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold">Conversations</h2>
-        <button onClick={() => setShowHidden(!showHidden)} className="text-sm text-blue-500">
-          {showHidden ? 'Show Normal' : 'Show Hidden'}
-        </button>
+        <div>
+          <button onClick={() => setIsModalOpen(true)} className="mr-2 text-sm text-blue-500">
+            New
+          </button>
+          <button onClick={() => setShowHidden(!showHidden)} className="text-sm text-blue-500">
+            {showHidden ? 'Show Normal' : 'Show Hidden'}
+          </button>
+        </div>
       </div>
+      <NewConversationModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
       <ul>
         {filteredConversations.map((convo) => (
           <li

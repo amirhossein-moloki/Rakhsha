@@ -211,3 +211,13 @@ exports.deleteSecretData = asyncHandler(async (req, res) => {
 
     res.status(200).send({ message: 'Secret data deleted successfully.' });
 });
+
+/**
+ * @description Get a list of all users
+ * @route GET /api/users
+ * @access Private
+ */
+exports.getUsers = asyncHandler(async (req, res) => {
+    const users = await User.find({}).select('_id username');
+    res.status(200).send(users);
+});
