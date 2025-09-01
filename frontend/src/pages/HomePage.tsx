@@ -16,13 +16,13 @@ export default function HomePage() {
     <MainLayout
       sidebar={
         <div>
-          <div className="p-4 border-b">
+          <div className="p-4 border-b border-royal-red">
             <h1 className="text-xl font-bold">Welcome, {user?.username}</h1>
             <div className="flex justify-between mt-2">
-              <Link to="/settings" className="text-blue-500 hover:underline">
+              <Link to="/settings" className="text-gray-300 hover:text-royal-red">
                 Settings
               </Link>
-              <button onClick={logout} className="text-red-500 hover:underline">
+              <button onClick={logout} className="text-gray-300 hover:text-royal-red">
                 Logout
               </button>
             </div>
@@ -39,7 +39,7 @@ export default function HomePage() {
           </>
         ) : (
           <div className="flex items-center justify-center h-full">
-            <h1 className="text-2xl text-gray-500">
+            <h1 className="text-2xl text-gray-400">
               Select a conversation to start messaging
             </h1>
           </div>

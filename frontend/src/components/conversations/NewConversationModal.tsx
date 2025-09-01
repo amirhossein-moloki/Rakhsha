@@ -58,29 +58,58 @@ export default function NewConversationModal({ isOpen, onClose }: NewConversatio
 
   const userOptions = users.map(u => ({ value: u._id, label: u.username }));
 
+  const selectStyles = {
+    control: (styles) => ({ ...styles, backgroundColor: '#1f2937', border: '1px solid #4b5563', color: 'white' }),
+    menu: (styles) => ({ ...styles, backgroundColor: '#1f2937' }),
+    option: (styles, { isFocused, isSelected }) => ({
+      ...styles,
+      backgroundColor: isSelected ? '#860d0d' : isFocused ? '#374151' : '#1f2937',
+      color: 'white',
+    }),
+    multiValue: (styles) => ({
+      ...styles,
+      backgroundColor: '#374151',
+    }),
+    multiValueLabel: (styles) => ({
+      ...styles,
+      color: 'white',
+    }),
+    multiValueRemove: (styles) => ({
+      ...styles,
+      color: 'white',
+      ':hover': {
+        backgroundColor: '#860d0d',
+        color: 'white',
+      },
+    }),
+    input: (styles) => ({...styles, color: 'white'}),
+    singleValue: (styles) => ({...styles, color: 'white'})
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
       <h2 className="text-xl font-bold">New Conversation</h2>
       <form onSubmit={handleSubmit(onSubmit)} className="mt-4 space-y-4">
         <div>
-          <label className="block text-sm font-medium">Conversation Name (required for groups)</label>
+          <label className="block text-sm font-medium text-gray-300">Conversation Name (required for groups)</label>
           <Controller
             name="name"
             control={control}
             render={({ field }) => (
-              <input {...field} className="w-full px-3 py-2 mt-1 border rounded-md" />
+              <input {...field} className="w-full px-3 py-2 mt-1 border rounded-md bg-gray-800 border-gray-700 text-white" />
             )}
           />
-          {errors.name && <p className="text-red-500">{errors.name.message}</p>}
+          {errors.name && <p className="text-royal-red">{errors.name.message}</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium">Participants</label>
+          <label className="block text-sm font-medium text-gray-300">Participants</label>
           <Controller
             name="participants"
             control={control}
             render={({ field }) => (
               <Select
                 {...field}
+                styles={selectStyles}
                 isMulti
                 options={userOptions}
                 className="mt-1"
@@ -89,9 +118,9 @@ export default function NewConversationModal({ isOpen, onClose }: NewConversatio
               />
             )}
           />
-          {errors.participants && <p className="text-red-500">{errors.participants.message}</p>}
+          {errors.participants && <p className="text-royal-red">{errors.participants.message}</p>}
         </div>
-        <button type="submit" className="w-full px-4 py-2 font-bold text-white bg-blue-500 rounded-md">
+        <button type="submit" className="w-full px-4 py-2 font-bold text-white bg-royal-red rounded-md">
           Create Conversation
         </button>
       </form>

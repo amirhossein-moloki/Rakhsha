@@ -56,19 +56,19 @@ export default function MessageInput({ conversationId }: MessageInputProps) {
   };
 
   return (
-    <div className="p-4 bg-white border-t">
+    <div className="p-4 bg-black border-t border-royal-red">
       <div className="flex items-center">
         <input
           type="text"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          className="flex-1 px-3 py-2 border rounded-l-md"
+          className="flex-1 px-3 py-2 border rounded-l-md bg-gray-800 border-gray-700 text-white"
           placeholder="Type a message..."
           onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
         />
         <button
           onClick={handleSendMessage}
-          className="px-4 py-2 font-bold text-white bg-blue-500 rounded-r-md"
+          className="px-4 py-2 font-bold text-white bg-royal-red rounded-r-md"
         >
           Send
         </button>

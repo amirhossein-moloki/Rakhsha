@@ -64,10 +64,10 @@ export default function ConversationList({ onSelectConversation }: ConversationL
       <div className="flex justify-between items-center mb-4 flex-shrink-0">
         <h2 className="text-xl font-bold">Conversations</h2>
         <div>
-          <button onClick={() => setIsModalOpen(true)} className="mr-4 text-sm font-semibold text-blue-600 hover:text-blue-800">
+          <button onClick={() => setIsModalOpen(true)} className="mr-4 text-sm font-semibold text-gray-300 hover:text-royal-red">
             New
           </button>
-          <button onClick={() => setShowHidden(!showHidden)} className="text-sm font-semibold text-blue-600 hover:text-blue-800">
+          <button onClick={() => setShowHidden(!showHidden)} className="text-sm font-semibold text-gray-300 hover:text-royal-red">
             {showHidden ? 'Show Normal' : 'Show Hidden'}
           </button>
         </div>
@@ -76,12 +76,12 @@ export default function ConversationList({ onSelectConversation }: ConversationL
       <div className="flex-grow overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center h-full">
-            <p className="text-gray-500">Loading conversations...</p>
+            <p className="text-gray-400">Loading conversations...</p>
           </div>
         ) : filteredConversations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center text-gray-500">
+          <div className="flex flex-col items-center justify-center h-full text-center text-gray-400">
             <p>No {showHidden ? 'hidden' : ''} conversations found.</p>
-            <button onClick={() => setIsModalOpen(true)} className="mt-2 text-sm font-semibold text-blue-600 hover:text-blue-800">
+            <button onClick={() => setIsModalOpen(true)} className="mt-2 text-sm font-semibold text-gray-300 hover:text-royal-red">
               Start a new one
             </button>
           </div>
@@ -90,14 +90,14 @@ export default function ConversationList({ onSelectConversation }: ConversationL
             {filteredConversations.map((convo) => (
               <li
                 key={convo._id}
-                className="p-3 flex items-center justify-between rounded-lg cursor-pointer hover:bg-gray-100 transition-colors duration-200"
+                className="p-3 flex items-center justify-between rounded-lg cursor-pointer hover:bg-gray-900 transition-colors duration-200"
                 onClick={() => onSelectConversation(convo._id)}
               >
                 <div className="flex items-center overflow-hidden">
                     {/* Placeholder Icon */}
-                    <div className="w-10 h-10 bg-gray-300 rounded-full mr-3 flex-shrink-0"></div>
+                    <div className="w-10 h-10 bg-gray-700 rounded-full mr-3 flex-shrink-0"></div>
                     <div className="truncate">
-                        <p className="font-semibold text-gray-800 truncate">
+                        <p className="font-semibold text-white truncate">
                             {decrypted[convo._id] ? decrypted[convo._id].name : 'Loading...'}
                         </p>
                     </div>
@@ -108,7 +108,7 @@ export default function ConversationList({ onSelectConversation }: ConversationL
                     e.stopPropagation(); // Prevent li's onClick from firing
                     handleHide(convo._id, !convo.isHidden);
                   }}
-                  className="px-3 py-1 text-xs font-semibold text-gray-600 bg-gray-200 rounded-full hover:bg-gray-300 ml-2 flex-shrink-0"
+                  className="px-3 py-1 text-xs font-semibold text-gray-300 bg-gray-800 rounded-full hover:bg-gray-700 ml-2 flex-shrink-0"
                 >
                   {convo.isHidden ? 'Unhide' : 'Hide'}
                 </button>

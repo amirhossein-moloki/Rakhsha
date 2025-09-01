@@ -91,8 +91,8 @@ export default function MessageView({ conversationId }: MessageViewProps) {
     if (editingMessage?._id === msg._id) {
       return (
         <div>
-          <input value={editText} onChange={e => setEditText(e.target.value)} className="w-full px-2 py-1 border rounded" />
-          <button onClick={handleSaveEdit} className="px-2 py-1 mt-1 text-xs text-white bg-blue-500 rounded">Save</button>
+          <input value={editText} onChange={e => setEditText(e.target.value)} className="w-full px-2 py-1 border rounded bg-gray-700 border-gray-600" />
+          <button onClick={handleSaveEdit} className="px-2 py-1 mt-1 text-xs text-white bg-royal-red rounded hover:bg-opacity-80">Save</button>
         </div>
       );
     }
@@ -101,7 +101,7 @@ export default function MessageView({ conversationId }: MessageViewProps) {
 
   return (
     <div className="flex flex-col h-full p-4">
-      <h2 className="text-xl font-bold">Messages</h2>
+      <h2 className="text-xl font-bold border-b border-royal-red pb-2">Messages</h2>
       <div className="flex-1 mt-4 overflow-y-auto">
         <ul>
           {conversationMessages.map((msg) => {
@@ -109,16 +109,16 @@ export default function MessageView({ conversationId }: MessageViewProps) {
             const isMyMessage = decrypted?.senderId === user?._id;
 
             return (
-              <li key={msg._id} className={`p-2 my-2 border rounded-md ${isMyMessage ? 'bg-blue-100 ml-auto' : 'bg-gray-100'}`} style={{maxWidth: '80%'}}>
+              <li key={msg._id} className={`p-2 my-2 border border-royal-red rounded-md ${isMyMessage ? 'bg-gray-800 ml-auto' : 'bg-gray-900'}`} style={{maxWidth: '80%'}}>
                 <div className="flex justify-between">
                   <p className="font-bold">{isMyMessage ? 'You' : getUsername(decrypted?.senderId)}</p>
                   <div>
-                    {isMyMessage && <button onClick={() => handleEdit(msg)} className="mr-2 text-xs text-blue-500">Edit</button>}
-                    <button onClick={() => handleDelete(msg._id)} className="text-xs text-red-500">Delete</button>
+                    {isMyMessage && <button onClick={() => handleEdit(msg)} className="mr-2 text-xs text-gray-300 hover:text-royal-red">Edit</button>}
+                    <button onClick={() => handleDelete(msg._id)} className="text-xs text-gray-300 hover:text-royal-red">Delete</button>
                   </div>
                 </div>
                 {decrypted ? renderMessageContent(msg, decrypted) : (
-                  <p className="text-sm text-gray-600 italic">
+                  <p className="text-sm text-gray-400 italic">
                     Decrypting...
                   </p>
                 )}
