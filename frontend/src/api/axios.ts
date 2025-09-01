@@ -2,7 +2,7 @@ import axios from 'axios';
 import { padRequest } from '@/lib/padding';
 
 const instance = axios.create({
-  baseURL: 'http://localhost:3000/api',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
 });
 
 // Add a request interceptor to pad POST and PUT requests
