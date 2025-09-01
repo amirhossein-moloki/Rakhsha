@@ -187,8 +187,7 @@ let redisClient;
 if (process.env.NODE_ENV !== 'test') {
     // Create a reusable Redis client
     redisClient = redis.createClient({
-        // Assuming Redis is running on localhost:6379.
-        // In a real production environment, this would come from env variables.
+        url: `redis://${process.env.REDIS_HOST || 'localhost'}:6379`
     });
     redisClient.on('error', (err) => console.log('Redis Client Error', err));
     redisClient.connect();

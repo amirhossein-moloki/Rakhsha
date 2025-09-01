@@ -1,5 +1,5 @@
-# Use a lightweight Node.js image
-FROM node:18-alpine
+# Use a Debian-based Node.js image for better compatibility with native modules
+FROM node:18-slim
 
 # Set the working directory in the container
 WORKDIR /app

@@ -39,6 +39,10 @@ export default function Register() {
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
       <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
         <h2 className="text-2xl font-bold text-center">Register</h2>
+        <div className="p-4 my-4 text-sm text-yellow-800 bg-yellow-100 border-l-4 border-yellow-500" role="alert">
+          <p className="font-bold">Security Warning</p>
+          <p>This application is a proof-of-concept. For simplicity, your private encryption keys will be stored in your browser's local storage, which is not secure. Do not use this application for sensitive communications.</p>
+        </div>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           {errors.root && <p className="text-sm text-center text-red-500">{errors.root.message}</p>}
           {successMessage && <p className="text-sm text-center text-green-500">{successMessage}</p>}

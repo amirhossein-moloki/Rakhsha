@@ -35,14 +35,15 @@ It is strongly advised to review the security report and fix these issues before
 
 ## Getting Started
 
-You can run the application locally using Docker and Docker Compose.
+You can run the application locally using Docker and Docker Compose for the backend, and npm for the frontend.
 
 ### Prerequisites
 
 *   [Docker](https://www.docker.com/get-started)
 *   [Docker Compose](https://docs.docker.com/compose/install/)
+*   [Node.js](https://nodejs.org/) (for the frontend)
 
-### Installation
+### Backend Setup
 
 1.  **Clone the repository:**
     ```bash
@@ -56,6 +57,11 @@ You can run the application locally using Docker and Docker Compose.
     cp .env.example .env
     ```
     Review the `.env` file and fill in the required values. For security reasons, you should generate strong, random secrets.
+
+    **IMPORTANT:** You must set a secure, random `JWT_SECRET` in the `.env` file. You can generate one using the following command:
+    ```bash
+    openssl rand -hex 32
+    ```
 
 3.  **Start the application:**
     ```bash
@@ -72,3 +78,29 @@ npm test
 ```
 
 This will run all the Jest tests and provide a coverage report.
+
+### Frontend Setup
+
+The frontend is a React application built with Vite.
+
+1.  **Navigate to the frontend directory:**
+    ```bash
+    cd frontend
+    ```
+
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
+
+3.  **Create an environment file:**
+    Create a `.env` file in the `frontend` directory. It should contain the following variable:
+    ```
+    VITE_API_URL=http://localhost:3000/api
+    ```
+
+4.  **Start the development server:**
+    ```bash
+    npm run dev
+    ```
+    The frontend will be available at `http://localhost:5173` (or another port if 5173 is in use).
