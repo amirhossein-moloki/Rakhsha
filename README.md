@@ -52,9 +52,9 @@ You can run the application locally using Docker and Docker Compose for the back
     ```
 
 2.  **Create an environment file:**
-    Copy the example environment file to a new `.env` file.
+    Copy the example environment file from the `backend` directory to a new `.env` file in the project root.
     ```bash
-    cp .env.example .env
+    cp backend/.env.example .env
     ```
     Review the `.env` file and fill in the required values. For security reasons, you should generate strong, random secrets.
 
@@ -69,15 +69,7 @@ You can run the application locally using Docker and Docker Compose for the back
     ```
     The application server will be running on the port specified in your `.env` file (default is 3000).
 
-## Testing
-
-To run the test suite, you can execute the following command:
-
-```bash
-npm test
-```
-
-This will run all the Jest tests and provide a coverage report.
+    > **Note:** If you encounter a "command not found" error, your system may be using a newer version of Docker that uses `docker compose` (with a space) instead of `docker-compose`. Try running `docker compose up -d`.
 
 ### Frontend Setup
 
@@ -104,3 +96,17 @@ The frontend is a React application built with Vite.
     npm run dev
     ```
     The frontend will be available at `http://localhost:5173` (or another port if 5173 is in use).
+
+## Usage
+
+Once both the backend and frontend are running, you can access the application by navigating to `http://localhost:5173` in your web browser.
+
+## Testing
+
+To run the test suite, you can execute the following command from the `backend` directory:
+
+```bash
+npm test
+```
+
+This will run all the Jest tests and provide a coverage report.
