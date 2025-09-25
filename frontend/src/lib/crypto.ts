@@ -1,4 +1,4 @@
-import { KeyHelper, KeyPairType, SessionBuilder, SessionCipher, SignalProtocolAddress } from '@privacyresearch/libsignal-protocol-typescript';
+import { KeyHelper, KeyPairType, PreKeyType, SessionBuilder, SessionCipher, SignalProtocolAddress } from '@privacyresearch/libsignal-protocol-typescript';
 import { PersistentSignalProtocolStore } from './PersistentSignalProtocolStore';
 import { Buffer } from 'buffer';
 import useAuthStore from '@/store/authStore';
@@ -18,7 +18,7 @@ export function getSignalStore(): PersistentSignalProtocolStore {
         signalStore = new PersistentSignalProtocolStore(identityKeyPair, registrationId);
 
         // Load pre-keys into the store
-        privateKeys.preKeys.forEach((p: KeyPairType) => {
+        privateKeys.preKeys.forEach((p: PreKeyType) => {
             signalStore?.storePreKey(p.keyId, p);
         });
         signalStore.storeSignedPreKey(privateKeys.signedPreKey.keyId, privateKeys.signedPreKey);
@@ -32,7 +32,7 @@ export async function generateIdentity() {
     const signedPreKeyId = Math.floor(Math.random() * 10000);
     const signedPreKey = await KeyHelper.generateSignedPreKey(identityKeyPair, signedPreKeyId);
 
-    const preKeys: KeyPairType[] = [];
+    const preKeys: PreKeyType[] = [];
     for (let i = 0; i < 100; i++) {
         const preKeyId = Math.floor(Math.random() * 10000);
         const preKey = await KeyHelper.generatePreKey(preKeyId);
@@ -51,12 +51,12 @@ export async function generateIdentity() {
             registrationId,
             signedPreKey: {
                 keyId: signedPreKey.keyId,
-                publicKey: Buffer.from(signedPreKey.pubKey).toString('hex'),
+                publicKey: Buffer.from(signedPreKey.keyPair.pubKey).toString('hex'),
                 signature: Buffer.from(signedPreKey.signature).toString('hex'),
             },
             oneTimePreKeys: preKeys.map(p => ({
                 keyId: p.keyId,
-                publicKey: Buffer.from(p.pubKey).toString('hex'),
+                publicKey: Buffer.from(p.keyPair.pubKey).toString('hex'),
             })),
         }
     };
@@ -74,9 +74,23 @@ async function buildSession(recipientId: string) {
     // Fetch pre-key bundle from the server
     const { data: preKeyBundle } = await api.get(`/users/${recipient.username}/pre-key-bundle`);
 
+    const processedBundle = {
+        ...preKeyBundle,
+        identityKey: Buffer.from(preKeyBundle.identityKey, 'hex'),
+        signedPreKey: {
+            ...preKeyBundle.signedPreKey,
+            publicKey: Buffer.from(preKeyBundle.signedPreKey.publicKey, 'hex'),
+            signature: Buffer.from(preKeyBundle.signedPreKey.signature, 'hex'),
+        },
+        oneTimePreKeys: preKeyBundle.oneTimePreKeys.map((k: any) => ({
+            ...k,
+            publicKey: Buffer.from(k.publicKey, 'hex'),
+        })),
+    };
+
     const recipientAddress = new SignalProtocolAddress(preKeyBundle.identityKey, preKeyBundle.registrationId);
     const sessionBuilder = new SessionBuilder(store, recipientAddress);
-    await sessionBuilder.processPreKey(preKeyBundle);
+    await sessionBuilder.processPreKey(processedBundle);
 }
 
 export async function encryptMessage(recipientId: string, message: string) {
@@ -87,7 +101,7 @@ export async function encryptMessage(recipientId: string, message: string) {
         throw new Error(`Recipient ${recipientId} not found or has no identity key.`);
     }
 
-    const recipientAddress = new SignalProtocolAddress(recipient.identityKey, recipient.registrationId);
+    const recipientAddress = new SignalProtocolAddress(Buffer.from(recipient.identityKey, 'hex'), recipient.registrationId);
     const sessionCipher = new SessionCipher(store, recipientAddress);
 
     // Check if a session exists. If not, build one.
@@ -96,13 +110,17 @@ export async function encryptMessage(recipientId: string, message: string) {
         await buildSession(recipientId);
     }
 
-    const ciphertext = await sessionCipher.encrypt(Buffer.from(message, 'utf8'));
+    const messageBuffer = Buffer.from(message, 'utf8');
+    // The library expects a standard ArrayBuffer. The Uint8Array constructor
+    // copies the buffer data into a new ArrayBuffer.
+    const arrayBuffer = new Uint8Array(messageBuffer).buffer;
+    const ciphertext = await sessionCipher.encrypt(arrayBuffer);
     return ciphertext;
 }
 
 export async function decryptMessage(senderIdentityKey: string, registrationId: number, ciphertext: any) {
     const store = getSignalStore();
-    const senderAddress = new SignalProtocolAddress(senderIdentityKey, registrationId);
+    const senderAddress = new SignalProtocolAddress(Buffer.from(senderIdentityKey, 'hex'), registrationId);
     const sessionCipher = new SessionCipher(store, senderAddress);
 
     let plaintext: ArrayBuffer;
@@ -112,4 +130,9 @@ export async function decryptMessage(senderIdentityKey: string, registrationId: 
         plaintext = await sessionCipher.decryptWhisperMessage(ciphertext.body, 'binary');
     }
     return Buffer.from(plaintext).toString('utf8');
+}
+
+// This function is for testing purposes only, to reset the singleton store.
+export function _resetSignalStore() {
+    signalStore = null;
 }
