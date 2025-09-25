@@ -9,7 +9,15 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      buffer: 'buffer',
     },
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+        define: {
+            global: 'globalThis'
+        },
+    }
   },
   test: {
     globals: true,
