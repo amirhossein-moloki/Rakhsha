@@ -2,16 +2,23 @@ import { useState } from 'react';
 import api from '@/api/axios';
 import useAuthStore from '@/store/authStore';
 import useConversationStore from '@/store/conversationStore';
-import { encryptMessage } from '@/lib/crypto';
+import { getSignalStore, encryptMessage } from '@/lib/crypto';
+import { useEffect } from 'react';
 
 interface MessageInputProps {
   conversationId: string;
 }
 
 export default function MessageInput({ conversationId }: MessageInputProps) {
-  const { token, user } = useAuthStore();
+  const { token, user, privateKeys } = useAuthStore();
   const { conversations } = useConversationStore();
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (privateKeys) {
+      getSignalStore(privateKeys);
+    }
+  }, [privateKeys]);
 
   const handleSendMessage = async () => {
     if (!token || !user || !message.trim()) return;
@@ -29,19 +36,19 @@ export default function MessageInput({ conversationId }: MessageInputProps) {
       timestamp: timestamp,
     };
 
-    const recipients = conversation.participants.filter(p => p !== user._id);
+    const recipients = conversation.participants.filter(p => p._id !== user._id);
 
-    for (const recipientId of recipients) {
+    for (const recipient of recipients) {
       try {
-        const ciphertext = await encryptMessage(recipientId, JSON.stringify(plaintextPayload));
+        const ciphertext = await encryptMessage(recipient, JSON.stringify(plaintextPayload));
         // The timestamp is encrypted separately for the server to use for TTL etc.
         // In a real system, this might use a different key or mechanism.
-        const encryptedTimestamp = await encryptMessage(recipientId, timestamp);
+        const encryptedTimestamp = await encryptMessage(recipient, timestamp);
 
 
         await api.post('/messages', {
           conversationId,
-          recipientId,
+          recipientId: recipient._id,
           ciphertextPayload: JSON.stringify(ciphertext), // The libsignal ciphertext is an object
           messageType: 'text',
           encryptedTimestamp: JSON.stringify(encryptedTimestamp),
@@ -49,7 +56,7 @@ export default function MessageInput({ conversationId }: MessageInputProps) {
           headers: { Authorization: `Bearer ${token}` },
         });
       } catch (error) {
-        console.error(`Failed to send message to recipient ${recipientId}:`, error);
+        console.error(`Failed to send message to recipient ${recipient._id}:`, error);
       }
     }
     setMessage('');
