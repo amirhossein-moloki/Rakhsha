@@ -13,19 +13,26 @@ export interface PrivateKeys {
     signedPreKey: PreKeyType;
 }
 
-export function getSignalStore(privateKeys?: PrivateKeys): PersistentSignalProtocolStore {
+export function createStore(privateIdentity: PrivateKeys | { _private: PrivateKeys }): PersistentSignalProtocolStore {
+    const keys: PrivateKeys = '_private' in privateIdentity ? privateIdentity._private : privateIdentity;
+    const { identityKeyPair, registrationId } = keys;
+    const store = new PersistentSignalProtocolStore(identityKeyPair, registrationId);
+
+    // Load pre-keys into the store so new sessions can be established locally.
+    keys.preKeys.forEach((p: PreKeyType) => {
+        void store.storePreKey(p.keyId, p);
+    });
+    void store.storeSignedPreKey(keys.signedPreKey.keyId, keys.signedPreKey.keyPair);
+
+    return store;
+}
+
+export function getSignalStore(privateKeys?: PrivateKeys | { _private: PrivateKeys }): PersistentSignalProtocolStore {
     if (!signalStore) {
         if (!privateKeys) {
-            throw new Error("Private keys are required to initialize the Signal store.");
+            throw new Error('Private keys are required to initialize the Signal store.');
         }
-        const { identityKeyPair, registrationId } = privateKeys;
-        signalStore = new PersistentSignalProtocolStore(identityKeyPair, registrationId);
-
-        // Load pre-keys into the store
-        privateKeys.preKeys.forEach((p: PreKeyType) => {
-            signalStore?.storePreKey(p.keyId, p);
-        });
-        signalStore.storeSignedPreKey(privateKeys.signedPreKey.keyId, privateKeys.signedPreKey.keyPair);
+        signalStore = createStore(privateKeys);
     }
     return signalStore;
 }
@@ -150,4 +157,53 @@ export async function decryptMessage(senderIdentityKey: string, registrationId: 
 // This function is for testing purposes only, to reset the singleton store.
 export function _resetSignalStore() {
     signalStore = null;
+}
+
+function tryParseJson<T = any>(value: string): T | null {
+    try {
+        return JSON.parse(value) as T;
+    } catch (error) {
+        return null;
+    }
+}
+
+export interface ConversationMetadata {
+    name: string;
+    participants?: string[];
+    [key: string]: unknown;
+}
+
+export async function decryptConversationMetadata(
+    encryptedMetadata: string,
+    _key: Buffer | Uint8Array
+): Promise<ConversationMetadata> {
+    if (!encryptedMetadata) {
+        return { name: 'Unknown conversation', participants: [] };
+    }
+
+    // Attempt direct JSON parsing first (the backend currently stores JSON strings).
+    const direct = tryParseJson<ConversationMetadata>(encryptedMetadata);
+    if (direct) {
+        return direct;
+    }
+
+    // If the payload is base64 encoded JSON, decode and retry.
+    try {
+        const decoded = Buffer.from(encryptedMetadata, 'base64').toString('utf8');
+        const parsed = tryParseJson<ConversationMetadata>(decoded);
+        if (parsed) {
+            return parsed;
+        }
+        if (decoded) {
+            return { name: decoded };
+        }
+    } catch (error) {
+        // Swallow decoding errors and fall back to a descriptive placeholder below.
+    }
+
+    // As a final fallback, expose a shortened representation so the UI has something meaningful.
+    return {
+        name: encryptedMetadata.length > 60 ? `${encryptedMetadata.slice(0, 57)}...` : encryptedMetadata,
+        participants: [],
+    };
 }
