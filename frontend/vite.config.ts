@@ -11,9 +11,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  define: {
-    'global.Buffer': 'Buffer',
-  },
   test: {
     globals: true,
     environment: 'jsdom',
