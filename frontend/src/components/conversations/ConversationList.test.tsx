@@ -7,8 +7,14 @@ import * as useConversationsHook from '@/hooks/useConversations';
 import * as crypto from '@/lib/crypto';
 
 // Mock dependencies at the top level
-vi.mock('@/store/conversationStore');
-vi.mock('@/store/authStore');
+vi.mock('@/store/conversationStore', () => ({
+    __esModule: true,
+    default: vi.fn(),
+}));
+vi.mock('@/store/authStore', () => ({
+    __esModule: true,
+    default: vi.fn(),
+}));
 vi.mock('@/hooks/useConversations');
 vi.mock('@/lib/crypto', () => ({
   decryptConversationMetadata: vi.fn(),
@@ -26,11 +32,11 @@ describe('ConversationList Component', () => {
     vi.mocked(crypto.decryptConversationMetadata).mockImplementation(async (metadata) => ({
       name: `Decrypted ${metadata}`,
     }));
-    vi.mocked(useAuthStore.getState).mockReturnValue({ token: 'fake-token' } as any);
+    vi.mocked(useAuthStore).mockReturnValue({ token: 'fake-token' });
   });
 
   it('should display loading state initially', () => {
-    vi.mocked(useConversationStore.getState).mockReturnValue({
+    vi.mocked(useConversationStore).mockReturnValue({
         conversations: [],
         loading: true,
         setConversations: vi.fn(),
@@ -40,7 +46,7 @@ describe('ConversationList Component', () => {
   });
 
   it('should display conversations when loaded', async () => {
-    vi.mocked(useConversationStore.getState).mockReturnValue({
+    vi.mocked(useConversationStore).mockReturnValue({
         conversations: mockConversations,
         loading: false,
         setConversations: vi.fn(),
@@ -54,7 +60,7 @@ describe('ConversationList Component', () => {
 
   it('should call onSelectConversation when a conversation is clicked', async () => {
     const handleSelect = vi.fn();
-    vi.mocked(useConversationStore.getState).mockReturnValue({
+    vi.mocked(useConversationStore).mockReturnValue({
         conversations: mockConversations,
         loading: false,
         setConversations: vi.fn(),
@@ -67,7 +73,7 @@ describe('ConversationList Component', () => {
   });
 
   it('should open the new conversation modal when "New" button is clicked', async () => {
-    vi.mocked(useConversationStore.getState).mockReturnValue({
+    vi.mocked(useConversationStore).mockReturnValue({
         conversations: [],
         loading: false,
         setConversations: vi.fn(),
@@ -80,14 +86,11 @@ describe('ConversationList Component', () => {
         default: ({ isOpen }: { isOpen: boolean }) => (isOpen ? <div>Modal is Open</div> : null),
     }));
 
-    const newButton = screen.getByRole('button', { name: /New/i });
+    const newButton = screen.getByTestId('new-conversation-button');
     fireEvent.click(newButton);
 
     await waitFor(() => {
-        // This assertion is tricky because the modal is in another component.
-        // A better approach in a real app might be to use data-testid attributes.
-        // For now, we'll just check that the click doesn't crash.
-        expect(screen.getByText(/Conversations/i)).toBeInTheDocument();
+        expect(screen.getByText(/Modal is Open/i)).toBeInTheDocument();
     });
   });
 });

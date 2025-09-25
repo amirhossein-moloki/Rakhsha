@@ -64,7 +64,7 @@ export default function ConversationList({ onSelectConversation }: ConversationL
       <div className="flex justify-between items-center mb-4 flex-shrink-0">
         <h2 className="text-xl font-bold">Conversations</h2>
         <div>
-          <button onClick={() => setIsModalOpen(true)} className="mr-4 text-sm font-semibold text-gray-300 hover:text-royal-red">
+          <button data-testid="new-conversation-button" onClick={() => setIsModalOpen(true)} className="mr-4 text-sm font-semibold text-gray-300 hover:text-royal-red">
             New
           </button>
           <button onClick={() => setShowHidden(!showHidden)} className="text-sm font-semibold text-gray-300 hover:text-royal-red">

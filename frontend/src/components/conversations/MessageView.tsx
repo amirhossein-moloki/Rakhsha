@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import useAuthStore from '@/store/authStore';
 import useMessageStore from '@/store/messageStore';
 import useUserStore from '@/store/userStore';
+import useConversationStore from '@/store/conversationStore';
 import { decryptMessage, encryptMessage } from '@/lib/crypto';
 import api from '@/api/axios';
 
@@ -56,18 +57,21 @@ export default function MessageView({ conversationId }: MessageViewProps) {
   };
 
   const handleSaveEdit = async () => {
-    if (!editingMessage || !token) return;
+    if (!editingMessage || !token || !user) return;
     try {
       // Re-encrypt for all participants
-      const conversation = useMessageStore.getState().messages[conversationId];
-      // This is a simplified approach. A real app would need to get all participants
-      // of the conversation from the conversationStore.
-      const recipients = conversation.map((m:any) => m.recipientId).filter((id: string) => id !== user?._id);
+      const conversation = useConversationStore.getState().conversations.find(c => c._id === conversationId);
+      if (!conversation) {
+        console.error('Conversation not found');
+        return;
+      }
+      const recipients = conversation.participants.filter(p => p._id !== user._id);
 
-      for(const recipientId of recipients) {
-        const ciphertext = await encryptMessage(recipientId, editText);
+      for(const recipient of recipients) {
+        const ciphertext = await encryptMessage(recipient, editText);
         await api.put(`/conversations/messages/${editingMessage._id}`, {
-            content: JSON.stringify(ciphertext)
+            recipientId: recipient._id,
+            ciphertextPayload: JSON.stringify(ciphertext)
         }, {
             headers: { Authorization: `Bearer ${token}` },
         });

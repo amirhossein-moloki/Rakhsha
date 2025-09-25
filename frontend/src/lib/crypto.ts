@@ -1,19 +1,23 @@
 import { KeyHelper, KeyPairType, PreKeyType, SessionBuilder, SessionCipher, SignalProtocolAddress } from '@privacyresearch/libsignal-protocol-typescript';
 import { PersistentSignalProtocolStore } from './PersistentSignalProtocolStore';
 import { Buffer } from 'buffer';
-import useAuthStore from '@/store/authStore';
-import useUserStore from '@/store/userStore';
-import api from '@/api/axios';
+import { User } from '@/types/user';
 
 let signalStore: PersistentSignalProtocolStore | null = null;
 
-export function getSignalStore(): PersistentSignalProtocolStore {
+// Define an interface for the private keys to improve type safety and readability
+export interface PrivateKeys {
+    identityKeyPair: KeyPairType;
+    registrationId: number;
+    preKeys: PreKeyType[];
+    signedPreKey: PreKeyType;
+}
+
+export function getSignalStore(privateKeys?: PrivateKeys): PersistentSignalProtocolStore {
     if (!signalStore) {
-        const { privateKeys } = useAuthStore.getState();
         if (!privateKeys) {
-            throw new Error("Private keys not available in auth store. Cannot initialize Signal store.");
+            throw new Error("Private keys are required to initialize the Signal store.");
         }
-        // The privateKeys object stored during registration needs to be structured correctly
         const { identityKeyPair, registrationId } = privateKeys;
         signalStore = new PersistentSignalProtocolStore(identityKeyPair, registrationId);
 
@@ -21,7 +25,7 @@ export function getSignalStore(): PersistentSignalProtocolStore {
         privateKeys.preKeys.forEach((p: PreKeyType) => {
             signalStore?.storePreKey(p.keyId, p);
         });
-        signalStore.storeSignedPreKey(privateKeys.signedPreKey.keyId, privateKeys.signedPreKey);
+        signalStore.storeSignedPreKey(privateKeys.signedPreKey.keyId, privateKeys.signedPreKey.keyPair);
     }
     return signalStore;
 }
@@ -62,17 +66,25 @@ export async function generateIdentity() {
     };
 }
 
-async function buildSession(recipientId: string) {
+// Define an interface for the pre-key bundle to improve type safety and readability
+export interface PreKeyBundle {
+    identityKey: string;
+    registrationId: number;
+    signedPreKey: {
+        keyId: number;
+        publicKey: string;
+        signature: string;
+    };
+    oneTimePreKeys: {
+        keyId: number;
+        publicKey: string;
+    }[];
+}
+
+import api from '@/api/axios';
+
+export async function buildSession(preKeyBundle: PreKeyBundle) {
     const store = getSignalStore();
-    const { users } = useUserStore.getState();
-    const recipient = users.find(u => u._id === recipientId);
-
-    if (!recipient || !recipient.username) {
-        throw new Error(`Recipient ${recipientId} not found or has no username.`);
-    }
-
-    // Fetch pre-key bundle from the server
-    const { data: preKeyBundle } = await api.get(`/users/${recipient.username}/pre-key-bundle`);
 
     const processedBundle = {
         ...preKeyBundle,
@@ -88,17 +100,15 @@ async function buildSession(recipientId: string) {
         })),
     };
 
-    const recipientAddress = new SignalProtocolAddress(preKeyBundle.identityKey, preKeyBundle.registrationId);
+    const recipientAddress = new SignalProtocolAddress(processedBundle.identityKey, preKeyBundle.registrationId);
     const sessionBuilder = new SessionBuilder(store, recipientAddress);
     await sessionBuilder.processPreKey(processedBundle);
 }
 
-export async function encryptMessage(recipientId: string, message: string) {
+export async function encryptMessage(recipient: User, message: string) {
     const store = getSignalStore();
-    const { users } = useUserStore.getState();
-    const recipient = users.find(u => u._id === recipientId);
-    if (!recipient || !recipient.identityKey) {
-        throw new Error(`Recipient ${recipientId} not found or has no identity key.`);
+    if (!recipient.identityKey) {
+        throw new Error(`Recipient ${recipient._id} has no identity key.`);
     }
 
     const recipientAddress = new SignalProtocolAddress(Buffer.from(recipient.identityKey, 'hex'), recipient.registrationId);
@@ -107,7 +117,12 @@ export async function encryptMessage(recipientId: string, message: string) {
     // Check if a session exists. If not, build one.
     const sessionExists = await store.loadSession(recipientAddress.toString());
     if (!sessionExists) {
-        await buildSession(recipientId);
+        if (!recipient.username) {
+            throw new Error(`Recipient ${recipient._id} has no username.`);
+        }
+        // Fetch pre-key bundle from the server
+        const { data: preKeyBundle } = await api.get(`/users/${recipient.username}/pre-key-bundle`);
+        await buildSession(preKeyBundle);
     }
 
     const messageBuffer = Buffer.from(message, 'utf8');

@@ -46,13 +46,14 @@ describe('Crypto Library', () => {
 
         // --- Step 1: Alice encrypts a message for Bob ---
 
-        // Mock stores from Alice's perspective
-        vi.mocked(useAuthStore.getState).mockReturnValue({
-            privateKeys: aliceIdentity._private,
-        } as any);
-        vi.mocked(useUserStore.getState).mockReturnValue({
-            users: [{ _id: 'bob', username: 'bob', ...bobIdentity.public }],
-        } as any);
+        // Initialize Alice's store
+        crypto.getSignalStore(aliceIdentity._private);
+
+        const bobUser = {
+            _id: 'bob',
+            username: 'bob',
+            ...bobIdentity.public
+        };
 
         // Mock API to return Bob's public bundle
         vi.mocked(api.get).mockResolvedValue({
@@ -60,7 +61,7 @@ describe('Crypto Library', () => {
         });
 
         const message = "Hello Bob!";
-        const encryptedMessage = await crypto.encryptMessage('bob', message);
+        const encryptedMessage = await crypto.encryptMessage(bobUser, message);
         expect(encryptedMessage).toBeDefined();
 
         // --- Step 2: Bob decrypts the message from Alice ---
@@ -68,18 +69,8 @@ describe('Crypto Library', () => {
         // Reset the singleton store to simulate a different user
         crypto._resetSignalStore();
 
-        // Mock stores from Bob's perspective
-        vi.mocked(useAuthStore.getState).mockReturnValue({
-            privateKeys: bobIdentity._private,
-        } as any);
-
-        // Bob's store needs to be populated with his keys
-        // We can do this by calling getSignalStore which is now configured for Bob
-        const bobStore = crypto.getSignalStore() as PersistentSignalProtocolStore;
-        // The store is initialized inside getSignalStore, but we need to ensure it has the pre-keys
-        // In a real scenario, these would have been stored when Bob registered.
-        await Promise.all(bobIdentity._private.preKeys.map(preKey => bobStore.storePreKey(preKey.keyId, preKey)));
-        await bobStore.storeSignedPreKey(bobIdentity._private.signedPreKey.keyId, bobIdentity._private.signedPreKey);
+        // Initialize Bob's store
+        crypto.getSignalStore(bobIdentity._private);
 
 
         const decryptedMessage = await crypto.decryptMessage(
