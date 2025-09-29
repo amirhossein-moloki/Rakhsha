@@ -4,7 +4,8 @@ const MessageSchema = new mongoose.Schema({
     conversationId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Conversation',
-        required: true
+        required: true,
+        index: true
     },
     senderId: { // For Sealed Sender, this is optional. The sender is in the ciphertext.
         type: mongoose.Schema.Types.ObjectId,
