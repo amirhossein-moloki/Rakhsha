@@ -1,32 +1,24 @@
 import { useEffect } from 'react';
 import { getSocket } from '@/lib/socket';
 import useMessageStore from '@/store/messageStore';
-import { decryptMessage } from '@/lib/crypto';
-import useAuthStore from '@/store/authStore';
-import { createStore } from '@/lib/crypto';
 import { Message } from '@/types/message';
 
 export default function useSocket() {
   const { addMessage, updateMessage, deleteMessage } = useMessageStore();
-  const { privateKeys } = useAuthStore();
 
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
 
-    const handleReceiveMessage = async (message: Message) => {
-      try {
-        if (!privateKeys) return;
-        const store = createStore({ _private: privateKeys, registrationId: 0 }); // Placeholder
-        const plaintext = await decryptMessage(store, message.senderId, message.ciphertextPayload);
-        addMessage({ ...message, content: plaintext });
-      } catch (error) {
-        console.error('Failed to decrypt and add message:', error);
-      }
+    // The responsibility of this hook is to simply update the store with raw message data from the socket.
+    // Decryption is handled by the component that needs to display the message (i.e., MessageView.tsx).
+    const handleReceiveMessage = (message: Message) => {
+      addMessage(message);
     };
 
     const handleMessageEdited = (message: Message) => {
-      // Decryption for edited messages would be similar to new messages
+      // The message is already updated in the backend, just update it in the store.
+      // MessageView will re-render and decrypt the new content.
       updateMessage(message);
     };
 
@@ -43,5 +35,5 @@ export default function useSocket() {
       socket.off('message_edited', handleMessageEdited);
       socket.off('message_deleted', handleMessageDeleted);
     };
-  }, [addMessage, updateMessage, deleteMessage, privateKeys]);
+  }, [addMessage, updateMessage, deleteMessage]);
 }

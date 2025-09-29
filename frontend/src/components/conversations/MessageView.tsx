@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import useAuthStore from '@/store/authStore';
 import useMessageStore from '@/store/messageStore';
 import useUserStore from '@/store/userStore';
@@ -25,29 +25,32 @@ export default function MessageView({ conversationId }: MessageViewProps) {
   const [editingMessage, setEditingMessage] = useState<any>(null);
   const [editText, setEditText] = useState('');
 
+  const decryptSingleMessage = useCallback(async (msg: any) => {
+    if (!msg.senderIdentityKey || !msg.registrationId) {
+        console.warn(`Message ${msg._id} is missing identity information for decryption.`);
+        return;
+    }
+    try {
+        const ciphertext = JSON.parse(msg.ciphertextPayload);
+        const plaintext = await decryptMessage(msg.senderIdentityKey, msg.registrationId, ciphertext);
+        const decryptedData: DecryptedMessage = JSON.parse(plaintext);
+        setDecryptedMessages((prev) => ({ ...prev, [msg._id]: decryptedData }));
+    } catch (error) {
+        console.error(`Failed to decrypt message ${msg._id}:`, error);
+        setDecryptedMessages((prev) => ({
+            ...prev,
+            [msg._id]: { senderId: '?', content: '[Decryption Failed]', timestamp: '' },
+        }));
+    }
+  }, []);
+
   useEffect(() => {
-    const decryptAllMessages = async () => {
-      for (const msg of conversationMessages) {
-        // The msg object from websocket now contains senderIdentityKey
-        if (!decryptedMessages[msg._id] && msg.senderIdentityKey) {
-          try {
-            // The ciphertext from the backend is a stringified object
-            const ciphertext = JSON.parse(msg.ciphertextPayload);
-            const plaintext = await decryptMessage(msg.senderIdentityKey, msg.registrationId, ciphertext);
-            const decryptedData: DecryptedMessage = JSON.parse(plaintext);
-            setDecryptedMessages((prev) => ({ ...prev, [msg._id]: decryptedData }));
-          } catch (error) {
-            console.error(`Failed to decrypt message ${msg._id}:`, error);
-            setDecryptedMessages((prev) => ({
-              ...prev,
-              [msg._id]: { senderId: '?', content: '[Decryption Failed]', timestamp: '' },
-            }));
-          }
+    for (const msg of conversationMessages) {
+        if (!decryptedMessages[msg._id]) {
+            decryptSingleMessage(msg);
         }
-      }
-    };
-    decryptAllMessages();
-  }, [conversationMessages, decryptedMessages]);
+    }
+  }, [conversationMessages, decryptedMessages, decryptSingleMessage]);
 
   const getUsername = (userId: string) => users.find(u => u._id === userId)?.username || 'Unknown User';
 
@@ -59,7 +62,6 @@ export default function MessageView({ conversationId }: MessageViewProps) {
   const handleSaveEdit = async () => {
     if (!editingMessage || !token || !user) return;
     try {
-      // Re-encrypt for all participants
       const conversation = useConversationStore.getState().conversations.find(c => c._id === conversationId);
       if (!conversation) {
         console.error('Conversation not found');
@@ -67,15 +69,21 @@ export default function MessageView({ conversationId }: MessageViewProps) {
       }
       const recipients = conversation.participants.filter(p => p._id !== user._id);
 
-      for(const recipient of recipients) {
+      // Encrypt for all recipients and send in a single batch
+      const messages = await Promise.all(recipients.map(async (recipient) => {
         const ciphertext = await encryptMessage(recipient, editText);
-        await api.put(`/conversations/messages/${editingMessage._id}`, {
-            recipientId: recipient._id,
-            ciphertextPayload: JSON.stringify(ciphertext)
-        }, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-      }
+        return {
+          recipientId: recipient._id,
+          ciphertextPayload: JSON.stringify(ciphertext),
+        };
+      }));
+
+      await api.put(`/conversations/messages/${editingMessage._id}`, {
+        messages
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
       setEditingMessage(null);
     } catch (error) {
       console.error('Failed to edit message:', error);
