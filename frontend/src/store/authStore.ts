@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { User } from '@/types/user';
 import { disconnectSocket } from '@/lib/socket';
-import { generateIdentity } from '@/lib/crypto';
+import { generateIdentity, encryptPrivateKeys, decryptPrivateKeys } from '@/lib/crypto';
 import api from '@/api/axios';
 
 interface AuthState {
@@ -33,6 +33,10 @@ const useAuthStore = create<AuthState>()(
       setIsSecretMode: (isSecretMode) => set({ isSecretMode }),
       setPrivateKeys: (keys) => set({ privateKeys: keys }),
       logout: () => {
+        const { user } = get();
+        if (user && user.email) {
+          localStorage.removeItem(`encryptedPrivateKeys_${user.email}`);
+        }
         disconnectSocket();
         set({ token: null, user: null, privateKeys: null, isSecretMode: false });
       },
@@ -44,6 +48,12 @@ const useAuthStore = create<AuthState>()(
           ...identity.public,
         });
 
+        // Encrypt the private keys with the user's password
+        const encryptedPrivateKeys = await encryptPrivateKeys(identity._private, password);
+
+        // Store the encrypted keys in localStorage, scoped to the user's email
+        localStorage.setItem(`encryptedPrivateKeys_${email}`, encryptedPrivateKeys);
+
         // This is NOT secure and should not be used in production.
         set({ privateKeys: identity._private });
       },
@@ -52,6 +62,18 @@ const useAuthStore = create<AuthState>()(
         const { token } = response.data;
         set({ token, isSecretMode: false });
         await get().fetchUser();
+
+        // After successful login, decrypt and load the private keys
+        const encryptedPrivateKeys = localStorage.getItem(`encryptedPrivateKeys_${email}`);
+        if (encryptedPrivateKeys) {
+          try {
+            const decryptedKeys = await decryptPrivateKeys(encryptedPrivateKeys, password);
+            set({ privateKeys: decryptedKeys });
+          } catch (error) {
+            console.error('Failed to decrypt private keys:', error);
+            // Handle decryption failure, e.g., by logging out the user or showing an error
+          }
+        }
       },
       secretLogin: async (username, secondaryPassword) => {
         const response = await api.post('/auth/secret-login', { username, secondaryPassword });
@@ -76,6 +98,12 @@ const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'auth-storage', // name of the item in the storage (must be unique)
+      // By default, the entire state is persisted. We can selectively choose what to persist.
+      // We are excluding 'privateKeys' from being persisted to localStorage for security reasons.
+      partialize: (state) =>
+        Object.fromEntries(
+          Object.entries(state).filter(([key]) => !['privateKeys'].includes(key))
+        ),
     }
   )
 );
