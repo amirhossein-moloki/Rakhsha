@@ -77,37 +77,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('send_message', async (data) => {
-        // **SECURITY FIX**: Remove senderId from client data, use authenticated userId.
-        const { conversationId, recipientId, content } = data;
-        const senderId = socket.userId;
-
-        // **SECURITY FIX**: Authorization check - User must be a participant of the conversation.
-        const conversation = await Conversation.findOne({ _id: conversationId, participants: senderId }).select('+conversationKey');
-        if (!conversation) {
-            console.log(`SECURITY: User ${senderId} is not a participant of conversation ${conversationId} or it does not exist.`);
-            return;
-        }
-
-        const encrypted_content = encryptSymmetric(content, conversation.conversationKey);
-
-        const message = new Message({
-            conversationId,
-            // The senderId is NOT saved in the database to adhere to the "Sealed Sender" protocol.
-            recipientId,
-            ciphertextPayload: encrypted_content,
-        });
-        await message.save();
-
-        const messageData = message.toObject();
-        messageData.content = content;
-        // Add the senderId ONLY for the broadcast, so clients know who sent it.
-        messageData.senderId = senderId;
-        delete messageData.encrypted_content;
-
-        io.to(conversationId).emit('receive_message', messageData);
-    });
-
     socket.on('edit_message', async (data) => {
         try {
             const { messageId, content } = data;
