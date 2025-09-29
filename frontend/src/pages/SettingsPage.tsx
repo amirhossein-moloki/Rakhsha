@@ -5,7 +5,7 @@ import api from '@/api/axios';
 import useAuthStore from '@/store/authStore';
 
 const schema = z.object({
-  secondaryPassword: z.string().min(8),
+  secondaryPassword: z.string().min(8, { message: "String must contain at least 8 character(s)" }),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -35,8 +35,13 @@ export default function SettingsPage() {
         <h2 className="text-xl">Set Secondary Password</h2>
         <form onSubmit={handleSubmit(onSubmit)} className="mt-2 space-y-4">
           <div>
-            <label className="block text-sm font-medium">Secondary Password</label>
-            <input type="password" {...register('secondaryPassword')} className="w-full px-3 py-2 mt-1 border rounded-md" />
+            <label htmlFor="secondaryPasswordInput" className="block text-sm font-medium">Secondary Password</label>
+            <input
+              id="secondaryPasswordInput"
+              type="password"
+              {...register('secondaryPassword')}
+              className="w-full px-3 py-2 mt-1 border rounded-md"
+            />
             {errors.secondaryPassword && <p className="text-red-500">{errors.secondaryPassword.message}</p>}
           </div>
           <button type="submit" className="px-4 py-2 font-bold text-white bg-blue-500 rounded-md">
