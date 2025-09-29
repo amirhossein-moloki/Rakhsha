@@ -91,6 +91,20 @@ A special JWT token that grants access to secret mode.
 
 ## Users
 
+### `GET /api/users`
+
+Get all users.
+
+**Headers:**
+
+```
+Authorization: Bearer your_jwt_token
+```
+
+**Response:**
+
+An array of user objects.
+
 ### `POST /api/users/secondary-password`
 
 Set or update the user's secondary password. This password is used to access "Secret Mode".
@@ -116,6 +130,31 @@ Authorization: Bearer your_jwt_token
     "message": "Secondary password set successfully."
 }
 ```
+
+## Messages
+
+### `POST /api/messages`
+
+Send a new message to a conversation.
+
+**Headers:**
+
+```
+Authorization: Bearer your_jwt_token
+```
+
+**Request Body:**
+
+```json
+{
+    "conversationId": "your_conversation_id",
+    "content": "Hello, world!"
+}
+```
+
+**Response:**
+
+The new message object.
 
 ## Conversations
 
@@ -213,7 +252,7 @@ Authorization: Bearer your_jwt_token
 
 ### `POST /api/conversations/messages/send-file`
 
-Send a file.
+Send a file. **Note: This feature is not yet implemented on the frontend.**
 
 **Headers:**
 
