@@ -154,6 +154,102 @@ export async function decryptMessage(senderIdentityKey: string, registrationId: 
     return Buffer.from(plaintext).toString('utf8');
 }
 
+const aescbc = 'AES-GCM'
+const pbkdf2 = 'PBKDF2'
+
+/**
+ * Derives a key from a password using PBKDF2.
+ * @param password The password to derive the key from.
+ * @param salt The salt to use for key derivation.
+ * @returns A promise that resolves to a CryptoKey.
+ */
+async function deriveKeyFromPassword(password: string, salt: Uint8Array): Promise<CryptoKey> {
+    const encoder = new TextEncoder();
+    const passwordBuffer = encoder.encode(password);
+    const keyMaterial = await window.crypto.subtle.importKey(
+        'raw',
+        passwordBuffer,
+        { name: pbkdf2 },
+        false,
+        ['deriveKey']
+    );
+
+    return window.crypto.subtle.deriveKey(
+        {
+            name: pbkdf2,
+            salt: salt,
+            iterations: 100000,
+            hash: 'SHA-256',
+        },
+        keyMaterial,
+        { name: aescbc, length: 256 },
+        true,
+        ['encrypt', 'decrypt']
+    );
+}
+
+/**
+ * Encrypts the private keys using a password.
+ * @param privateKeys The private keys to encrypt.
+ * @param password The password to use for encryption.
+ * @returns A promise that resolves to a base64 encoded string containing the encrypted data, salt, and IV.
+ */
+export async function encryptPrivateKeys(privateKeys: PrivateKeys, password: string): Promise<string> {
+    const salt = window.crypto.getRandomValues(new Uint8Array(16));
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveKeyFromPassword(password, salt);
+    const encoder = new TextEncoder();
+    const dataToEncrypt = encoder.encode(JSON.stringify(privateKeys));
+
+    const encryptedData = await window.crypto.subtle.encrypt(
+        {
+            name: aescbc,
+            iv: iv,
+        },
+        key,
+        dataToEncrypt
+    );
+
+    const saltBuffer = Buffer.from(salt);
+    const ivBuffer = Buffer.from(iv);
+    const encryptedBuffer = Buffer.from(encryptedData);
+
+    // Combine salt, iv, and encrypted data into one buffer and then base64 encode it.
+    const combined = Buffer.concat([saltBuffer, ivBuffer, encryptedBuffer]);
+    return combined.toString('base64');
+}
+
+/**
+ * Decrypts the private keys using a password.
+ * @param encryptedKeysB64 The base64 encoded encrypted private keys.
+ * @param password The password to use for decryption.
+ * @returns A promise that resolves to the decrypted private keys.
+ */
+export async function decryptPrivateKeys(encryptedKeysB64: string, password: string): Promise<PrivateKeys> {
+    const combined = Buffer.from(encryptedKeysB64, 'base64');
+
+    // Extract salt, iv, and encrypted data from the combined buffer.
+    const salt = new Uint8Array(combined.slice(0, 16));
+    const iv = new Uint8Array(combined.slice(16, 28));
+    const encryptedData = new Uint8Array(combined.slice(28));
+
+    const key = await deriveKeyFromPassword(password, salt);
+
+    const decryptedData = await window.crypto.subtle.decrypt(
+        {
+            name: aescbc,
+            iv: iv,
+        },
+        key,
+        encryptedData
+    );
+
+    const decoder = new TextDecoder();
+    const decryptedString = decoder.decode(decryptedData);
+    return JSON.parse(decryptedString);
+}
+
+
 // This function is for testing purposes only, to reset the singleton store.
 export function _resetSignalStore() {
     signalStore = null;
