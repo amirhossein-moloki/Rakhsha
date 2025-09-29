@@ -12,14 +12,37 @@ jest.mock('argon2', () => ({
 
 const PADDING_SIZE = 4096; // As defined in requestPadding.js
 
-// Helper to pad request data
+// Helper to create a request body that is exactly PADDING_SIZE bytes long.
 const padRequest = (data) => {
-    const dataString = JSON.stringify(data);
-    const paddingNeeded = PADDING_SIZE - dataString.length;
-    if (paddingNeeded > 0) {
-        return { ...data, padding: 'a'.repeat(paddingNeeded) };
+    const finalObject = { ...data };
+    // Estimate initial padding length. This will be an overestimate.
+    let paddingLength = PADDING_SIZE - Buffer.byteLength(JSON.stringify(finalObject), 'utf8');
+
+    if (paddingLength < 0) {
+        throw new Error('Initial data is already larger than PADDING_SIZE.');
     }
-    return data;
+
+    finalObject.padding = 'a'.repeat(paddingLength);
+
+    // Iteratively adjust the padding to converge on the exact size.
+    // This is necessary because adding the 'padding' key and quotes changes the total length.
+    for (let i = 0; i < 10; i++) {
+        const currentString = JSON.stringify(finalObject);
+        const currentSize = Buffer.byteLength(currentString, 'utf8');
+        const adjustment = PADDING_SIZE - currentSize;
+
+        if (adjustment === 0) {
+            return finalObject; // Correct size found
+        }
+
+        paddingLength += adjustment;
+        if (paddingLength < 0) {
+             throw new Error('Cannot create padding. Data is too large after adjustments.');
+        }
+        finalObject.padding = 'a'.repeat(paddingLength);
+    }
+
+    throw new Error(`Failed to converge on correct padding size of ${PADDING_SIZE}.`);
 };
 
 describe('Conversation Routes', () => {

@@ -38,28 +38,41 @@ export default function MessageInput({ conversationId }: MessageInputProps) {
 
     const recipients = conversation.participants.filter(p => p._id !== user._id);
 
-    for (const recipient of recipients) {
+    // Step 1: Encrypt the message for all recipients.
+    const messages = await Promise.all(recipients.map(async (recipient) => {
       try {
         const ciphertext = await encryptMessage(recipient, JSON.stringify(plaintextPayload));
-        // The timestamp is encrypted separately for the server to use for TTL etc.
-        // In a real system, this might use a different key or mechanism.
         const encryptedTimestamp = await encryptMessage(recipient, timestamp);
-
-
-        await api.post('/messages', {
-          conversationId,
+        return {
           recipientId: recipient._id,
-          ciphertextPayload: JSON.stringify(ciphertext), // The libsignal ciphertext is an object
-          messageType: 'text',
+          ciphertextPayload: JSON.stringify(ciphertext),
           encryptedTimestamp: JSON.stringify(encryptedTimestamp),
-        }, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        };
       } catch (error) {
-        console.error(`Failed to send message to recipient ${recipient._id}:`, error);
+        console.error(`Failed to encrypt message for recipient ${recipient._id}:`, error);
+        return null; // Handle encryption failure for a single recipient
       }
+    }));
+
+    const validMessages = messages.filter(m => m !== null);
+    if (validMessages.length === 0) {
+      console.error('Failed to encrypt message for any recipient.');
+      return;
     }
-    setMessage('');
+
+    // Step 2: Send all encrypted messages in a single API call.
+    try {
+      await api.post('/messages', {
+        conversationId,
+        messages: validMessages,
+        messageType: 'text',
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setMessage('');
+    } catch (error) {
+      console.error('Failed to send messages in batch:', error);
+    }
   };
 
   return (

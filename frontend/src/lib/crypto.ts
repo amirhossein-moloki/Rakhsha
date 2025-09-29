@@ -1,9 +1,39 @@
-import { KeyHelper, KeyPairType, PreKeyType, SessionBuilder, SessionCipher, SignalProtocolAddress } from '@privacyresearch/libsignal-protocol-typescript';
-import { PersistentSignalProtocolStore } from './PersistentSignalProtocolStore';
+import { KeyHelper, KeyPairType, PreKeyType } from '@privacyresearch/libsignal-protocol-typescript';
 import { Buffer } from 'buffer';
 import { User } from '@/types/user';
+import CryptoWorker from './crypto.worker?worker';
 
-let signalStore: PersistentSignalProtocolStore | null = null;
+let worker: Worker | null = null;
+const requestPromises = new Map<number, { resolve: (value: any) => void; reject: (reason?: any) => void }>();
+let messageIdCounter = 0;
+
+function getWorker(): Worker {
+    if (!worker) {
+        worker = new CryptoWorker();
+        worker.onmessage = (event: MessageEvent) => {
+            const { id, success, payload, error } = event.data;
+            const promise = requestPromises.get(id);
+            if (promise) {
+                if (success) {
+                    promise.resolve(payload);
+                } else {
+                    promise.reject(new Error(error));
+                }
+                requestPromises.delete(id);
+            }
+        };
+    }
+    return worker;
+}
+
+function postMessageToWorker(action: string, payload: any): Promise<any> {
+    const id = messageIdCounter++;
+    const worker = getWorker();
+    return new Promise((resolve, reject) => {
+        requestPromises.set(id, { resolve, reject });
+        worker.postMessage({ id, action, payload });
+    });
+}
 
 // Define an interface for the private keys to improve type safety and readability
 export interface PrivateKeys {
@@ -13,28 +43,10 @@ export interface PrivateKeys {
     signedPreKey: PreKeyType;
 }
 
-export function createStore(privateIdentity: PrivateKeys | { _private: PrivateKeys }): PersistentSignalProtocolStore {
-    const keys: PrivateKeys = '_private' in privateIdentity ? privateIdentity._private : privateIdentity;
-    const { identityKeyPair, registrationId } = keys;
-    const store = new PersistentSignalProtocolStore(identityKeyPair, registrationId);
-
-    // Load pre-keys into the store so new sessions can be established locally.
-    keys.preKeys.forEach((p: PreKeyType) => {
-        void store.storePreKey(p.keyId, p);
-    });
-    void store.storeSignedPreKey(keys.signedPreKey.keyId, keys.signedPreKey.keyPair);
-
-    return store;
-}
-
-export function getSignalStore(privateKeys?: PrivateKeys | { _private: PrivateKeys }): PersistentSignalProtocolStore {
-    if (!signalStore) {
-        if (!privateKeys) {
-            throw new Error('Private keys are required to initialize the Signal store.');
-        }
-        signalStore = createStore(privateKeys);
-    }
-    return signalStore;
+// This function now initializes the worker's signal store
+export function getSignalStore(privateKeys: PrivateKeys | { _private: PrivateKeys }): Promise<string> {
+    const keys: PrivateKeys = '_private' in privateKeys ? privateKeys._private : privateKeys;
+    return postMessageToWorker('init', { privateKeys: keys });
 }
 
 export async function generateIdentity() {
@@ -88,70 +100,12 @@ export interface PreKeyBundle {
     }[];
 }
 
-import api from '@/api/axios';
-
-export async function buildSession(preKeyBundle: PreKeyBundle) {
-    const store = getSignalStore();
-
-    const processedBundle = {
-        ...preKeyBundle,
-        identityKey: Buffer.from(preKeyBundle.identityKey, 'hex'),
-        signedPreKey: {
-            ...preKeyBundle.signedPreKey,
-            publicKey: Buffer.from(preKeyBundle.signedPreKey.publicKey, 'hex'),
-            signature: Buffer.from(preKeyBundle.signedPreKey.signature, 'hex'),
-        },
-        oneTimePreKeys: preKeyBundle.oneTimePreKeys.map((k: any) => ({
-            ...k,
-            publicKey: Buffer.from(k.publicKey, 'hex'),
-        })),
-    };
-
-    const recipientAddress = new SignalProtocolAddress(processedBundle.identityKey, preKeyBundle.registrationId);
-    const sessionBuilder = new SessionBuilder(store, recipientAddress);
-    await sessionBuilder.processPreKey(processedBundle);
+export function encryptMessage(recipient: User, message: string): Promise<any> {
+    return postMessageToWorker('encrypt', { recipient, message });
 }
 
-export async function encryptMessage(recipient: User, message: string) {
-    const store = getSignalStore();
-    if (!recipient.identityKey) {
-        throw new Error(`Recipient ${recipient._id} has no identity key.`);
-    }
-
-    const recipientAddress = new SignalProtocolAddress(Buffer.from(recipient.identityKey, 'hex'), recipient.registrationId);
-    const sessionCipher = new SessionCipher(store, recipientAddress);
-
-    // Check if a session exists. If not, build one.
-    const sessionExists = await store.loadSession(recipientAddress.toString());
-    if (!sessionExists) {
-        if (!recipient.username) {
-            throw new Error(`Recipient ${recipient._id} has no username.`);
-        }
-        // Fetch pre-key bundle from the server
-        const { data: preKeyBundle } = await api.get(`/users/${recipient.username}/pre-key-bundle`);
-        await buildSession(preKeyBundle);
-    }
-
-    const messageBuffer = Buffer.from(message, 'utf8');
-    // The library expects a standard ArrayBuffer. The Uint8Array constructor
-    // copies the buffer data into a new ArrayBuffer.
-    const arrayBuffer = new Uint8Array(messageBuffer).buffer;
-    const ciphertext = await sessionCipher.encrypt(arrayBuffer);
-    return ciphertext;
-}
-
-export async function decryptMessage(senderIdentityKey: string, registrationId: number, ciphertext: any) {
-    const store = getSignalStore();
-    const senderAddress = new SignalProtocolAddress(Buffer.from(senderIdentityKey, 'hex'), registrationId);
-    const sessionCipher = new SessionCipher(store, senderAddress);
-
-    let plaintext: ArrayBuffer;
-    if (ciphertext.type === 3) { // PreKeyWhisperMessage
-        plaintext = await sessionCipher.decryptPreKeyWhisperMessage(ciphertext.body, 'binary');
-    } else { // WhisperMessage
-        plaintext = await sessionCipher.decryptWhisperMessage(ciphertext.body, 'binary');
-    }
-    return Buffer.from(plaintext).toString('utf8');
+export function decryptMessage(senderIdentityKey: string, registrationId: number, ciphertext: any): Promise<string> {
+    return postMessageToWorker('decrypt', { senderIdentityKey, registrationId, ciphertext });
 }
 
 const aescbc = 'AES-GCM'

@@ -12,49 +12,59 @@ const User = require('../models/User');
  * @access Private
  */
 exports.sendMessage = asyncHandler(async (req, res) => {
-    const { conversationId, recipientId, messageType, ciphertextPayload, encryptedTimestamp } = req.body;
+    const { conversationId, messages, messageType } = req.body;
 
-    if (!conversationId || !recipientId || !ciphertextPayload || !encryptedTimestamp) {
-        return res.status(400).send({ error: 'conversationId, recipientId, ciphertextPayload, and encryptedTimestamp are required.' });
+    if (!conversationId || !Array.isArray(messages) || !messages.length) {
+        return res.status(400).send({ error: 'conversationId and a non-empty messages array are required.' });
     }
 
-    // 1. Authorize that the sender is part of the conversation using the new model.
+    // 1. Authorize that the sender is part of the conversation.
     if (!req.user.conversations.map(id => id.toString()).includes(conversationId)) {
         return res.status(403).send({ error: 'Forbidden: You are not a participant in this conversation.' });
     }
 
-    // 2. Create the new message object. Note we are NOT saving the senderId.
-    const messageData = {
-        conversationId,
-        recipientId,
-        messageType,
-        ciphertextPayload,
-    };
+    const createdMessages = [];
 
-    // Advanced Disappearing Messages: Set expiration if requested by the client.
-    const { expiresInSeconds } = req.body;
-    if (expiresInSeconds && Number.isInteger(expiresInSeconds) && expiresInSeconds > 0) {
-        messageData.expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
+    for (const msg of messages) {
+        const { recipientId, ciphertextPayload, encryptedTimestamp } = msg;
+
+        if (!recipientId || !ciphertextPayload || !encryptedTimestamp) {
+            // We can choose to either fail the whole batch or skip invalid messages.
+            // For now, let's skip and log an error. A more robust implementation might return partial success.
+            console.error('Skipping invalid message in batch:', msg);
+            continue;
+        }
+
+        // 2. Create the new message object.
+        const messageData = {
+            conversationId,
+            recipientId,
+            messageType,
+            ciphertextPayload,
+        };
+
+        // Optional: Handle disappearing messages if expiresInSeconds is provided at the top level.
+        const { expiresInSeconds } = req.body;
+        if (expiresInSeconds && Number.isInteger(expiresInSeconds) && expiresInSeconds > 0) {
+            messageData.expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
+        }
+
+        const message = new Message(messageData);
+        await message.save();
+        createdMessages.push(message);
+
+        // 4. Notify the recipient via WebSocket in real-time
+        const io = req.app.get('socketio');
+        if (io) {
+            io.to(conversationId).emit('receive_message', {
+                ...message.toObject(),
+                senderIdentityKey: req.user.identityKey,
+                registrationId: req.user.registrationId
+            });
+        }
     }
 
-    const message = new Message(messageData);
-
-    await message.save();
-
-    // 4. Notify the recipient via WebSocket in real-time
-    const io = req.app.get('socketio');
-    if (io) {
-        // The client-side should be listening for the 'receive_message' event
-        // in the specific conversation room.
-        // We include the sender's identity key so the client knows which session to use for decryption.
-        // This does not violate sealed sender as it's not stored in the DB.
-        io.to(conversationId).emit('receive_message', {
-            ...message.toObject(),
-            senderIdentityKey: req.user.identityKey
-        });
-    }
-
-    res.status(201).send(message);
+    res.status(201).send(createdMessages);
 });
 
 /**
@@ -155,7 +165,12 @@ exports.routeMessage = asyncHandler(async (req, res) => {
             // 5. Notify the recipient via WebSocket in real-time.
             const io = req.app.get('socketio');
             if (io) {
-                io.to(messageData.conversationId).emit('receive_message', message);
+                // Include sender's identity info for the client to initiate decryption.
+                io.to(messageData.conversationId).emit('receive_message', {
+                    ...message.toObject(),
+                    senderIdentityKey: sender.identityKey,
+                    registrationId: sender.registrationId
+                });
             }
 
             res.status(200).send({ message: 'Message delivered.' });
