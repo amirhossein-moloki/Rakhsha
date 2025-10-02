@@ -27,20 +27,28 @@ export default function MessageView({ conversationId }: MessageViewProps) {
 
   const decryptSingleMessage = useCallback(async (msg: any) => {
     if (!msg.senderIdentityKey || !msg.registrationId) {
-        console.warn(`Message ${msg._id} is missing identity information for decryption.`);
-        return;
+      console.warn(`Message ${msg._id} is missing identity information for decryption.`);
+      setDecryptedMessages((prev) => ({
+        ...prev,
+        [msg._id]: { senderId: '?', content: '[Missing Identity Information]', timestamp: '' },
+      }));
+      return;
     }
+
     try {
-        const ciphertext = JSON.parse(msg.ciphertextPayload);
-        const plaintext = await decryptMessage(msg.senderIdentityKey, msg.registrationId, ciphertext);
-        const decryptedData: DecryptedMessage = JSON.parse(plaintext);
-        setDecryptedMessages((prev) => ({ ...prev, [msg._id]: decryptedData }));
+      const ciphertext = typeof msg.ciphertextPayload === 'string'
+        ? JSON.parse(msg.ciphertextPayload)
+        : msg.ciphertextPayload;
+
+      const plaintext = await decryptMessage(msg.senderIdentityKey, msg.registrationId, ciphertext);
+      const decryptedData: DecryptedMessage = JSON.parse(plaintext);
+      setDecryptedMessages((prev) => ({ ...prev, [msg._id]: decryptedData }));
     } catch (error) {
-        console.error(`Failed to decrypt message ${msg._id}:`, error);
-        setDecryptedMessages((prev) => ({
-            ...prev,
-            [msg._id]: { senderId: '?', content: '[Decryption Failed]', timestamp: '' },
-        }));
+      console.error(`Failed to decrypt message ${msg._id}:`, error);
+      setDecryptedMessages((prev) => ({
+        ...prev,
+        [msg._id]: { senderId: '?', content: '[Decryption Failed]', timestamp: '' },
+      }));
     }
   }, []);
 
