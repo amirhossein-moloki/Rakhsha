@@ -3,7 +3,8 @@ module.exports = {
     rootDir: '.',
     testMatch: ['<rootDir>/tests/**/*.test.js'],
     testTimeout: 30000,
-    setupFiles: ['<rootDir>/tests/jest.setup.js'],
+    // Use setupFilesAfterEnv to ensure the environment is ready before tests run.
+    setupFilesAfterEnv: ['<rootDir>/tests/jest.setup.js'],
     transform: {
         '^.+\\.js$': 'babel-jest',
     },
