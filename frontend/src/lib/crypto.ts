@@ -52,12 +52,19 @@ export function getSignalStore(privateKeys: PrivateKeys | { _private: PrivateKey
 export async function generateIdentity() {
     const registrationId = KeyHelper.generateRegistrationId();
     const identityKeyPair = await KeyHelper.generateIdentityKeyPair();
-    const signedPreKeyId = Math.floor(Math.random() * 10000);
+    // Use a cryptographically secure random number generator for the key ID.
+    // The ID should be a high-entropy random integer. Using a 31-bit integer.
+    const signedPreKeyId = window.crypto.getRandomValues(new Uint32Array(1))[0] & 0x7FFFFFFF;
     const signedPreKey = await KeyHelper.generateSignedPreKey(identityKeyPair, signedPreKeyId);
 
     const preKeys: PreKeyType[] = [];
-    for (let i = 0; i < 100; i++) {
-        const preKeyId = Math.floor(Math.random() * 10000);
+    // Generate a batch of pre-keys. Ensure their IDs are unique.
+    const preKeyIds = new Set<number>();
+    while (preKeyIds.size < 100) {
+        preKeyIds.add(window.crypto.getRandomValues(new Uint32Array(1))[0] & 0x7FFFFFFF);
+    }
+
+    for (const preKeyId of preKeyIds) {
         const preKey = await KeyHelper.generatePreKey(preKeyId);
         preKeys.push(preKey);
     }
@@ -223,37 +230,88 @@ export interface ConversationMetadata {
     [key: string]: unknown;
 }
 
+/**
+ * Encrypts conversation metadata using AES-GCM.
+ * @param metadata The conversation metadata to encrypt.
+ * @param key The symmetric key (CryptoKey) to use for encryption.
+ * @returns A promise that resolves to a base64 encoded string containing the IV and ciphertext.
+ */
+export async function encryptConversationMetadata(metadata: ConversationMetadata, key: CryptoKey): Promise<string> {
+    const iv = window.crypto.getRandomValues(new Uint8Array(12)); // 12 bytes for AES-GCM is standard
+    const encoder = new TextEncoder();
+    const dataToEncrypt = encoder.encode(JSON.stringify(metadata));
+
+    const encryptedData = await window.crypto.subtle.encrypt(
+        {
+            name: aescbc, // Reusing the 'AES-GCM' constant
+            iv: iv,
+        },
+        key,
+        dataToEncrypt
+    );
+
+    const ivBuffer = Buffer.from(iv);
+    const encryptedBuffer = Buffer.from(encryptedData);
+
+    // Combine IV and encrypted data, then base64 encode.
+    const combined = Buffer.concat([ivBuffer, encryptedBuffer]);
+    return combined.toString('base64');
+}
+
+
 export async function decryptConversationMetadata(
-    encryptedMetadata: string,
-    _key: Buffer | Uint8Array
+    encryptedMetadataB64: string,
+    key: CryptoKey
 ): Promise<ConversationMetadata> {
-    if (!encryptedMetadata) {
+    if (!encryptedMetadataB64) {
         return { name: 'Unknown conversation', participants: [] };
     }
 
-    // Attempt direct JSON parsing first (the backend currently stores JSON strings).
-    const direct = tryParseJson<ConversationMetadata>(encryptedMetadata);
-    if (direct) {
-        return direct;
-    }
-
-    // If the payload is base64 encoded JSON, decode and retry.
     try {
-        const decoded = Buffer.from(encryptedMetadata, 'base64').toString('utf8');
-        const parsed = tryParseJson<ConversationMetadata>(decoded);
-        if (parsed) {
-            return parsed;
-        }
-        if (decoded) {
-            return { name: decoded };
-        }
-    } catch (error) {
-        // Swallow decoding errors and fall back to a descriptive placeholder below.
-    }
+        const combined = Buffer.from(encryptedMetadataB64, 'base64');
 
-    // As a final fallback, expose a shortened representation so the UI has something meaningful.
-    return {
-        name: encryptedMetadata.length > 60 ? `${encryptedMetadata.slice(0, 57)}...` : encryptedMetadata,
-        participants: [],
-    };
+        // Extract IV and ciphertext from the combined buffer.
+        const iv = new Uint8Array(combined.slice(0, 12));
+        const encryptedData = new Uint8Array(combined.slice(12));
+
+        const decryptedData = await window.crypto.subtle.decrypt(
+            {
+                name: aescbc, // Reusing the 'AES-GCM' constant
+                iv: iv,
+            },
+            key,
+            encryptedData
+        );
+
+        const decoder = new TextDecoder();
+        const decryptedString = decoder.decode(decryptedData);
+        return JSON.parse(decryptedString) as ConversationMetadata;
+
+    } catch (error) {
+        console.error("Failed to decrypt conversation metadata:", error);
+        // Fallback for metadata that might not have been encrypted with the new method yet.
+        // This logic attempts to parse the string as if it were unencrypted legacy data.
+
+        // 1. Try parsing as raw JSON
+        const direct = tryParseJson<ConversationMetadata>(encryptedMetadataB64);
+        if (direct) {
+            return direct;
+        }
+
+        // 2. Try parsing as base64-encoded JSON
+        try {
+            const decoded = Buffer.from(encryptedMetadataB64, 'base64').toString('utf8');
+            const parsed = tryParseJson<ConversationMetadata>(decoded);
+            if (parsed) {
+                return parsed;
+            }
+        } catch (e) {
+            // This catch handles cases where the string is not valid Base64.
+            // We can ignore it and proceed to the final fallback.
+        }
+
+        // 3. If all else fails, return the placeholder.
+        // This will be hit if decryption fails AND it's not valid legacy data.
+        return { name: 'Could not decrypt name' };
+    }
 }
