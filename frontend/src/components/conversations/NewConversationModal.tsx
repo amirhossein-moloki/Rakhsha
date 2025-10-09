@@ -8,6 +8,9 @@ import useConversationStore from '@/store/conversationStore';
 import useAuthStore from '@/store/authStore';
 import Select from 'react-select';
 import api from '@/api/axios';
+import { encryptConversationMetadata, ConversationMetadata } from '@/lib/crypto';
+import { generateConversationKey, storeConversationKey } from '@/lib/key-manager';
+import { Conversation } from '@/types/conversation';
 
 const schema = z.object({
   name: z.string().optional(),
@@ -34,25 +37,48 @@ export default function NewConversationModal({ isOpen, onClose }: NewConversatio
   const { users } = useUserStore();
   const { token } = useAuthStore();
   const { addConversation } = useConversationStore();
-  const { control, handleSubmit, formState: { errors } } = useForm<FormData>({
+  const { control, handleSubmit, formState: { errors }, reset } = useForm<FormData>({
     resolver: zodResolver(schema),
   });
 
   const onSubmit = async (data: FormData) => {
     if (!token) return;
     try {
-      const response = await api.post('/conversations', {
+      // Step 1: Create the conversation with a placeholder name
+      const createResponse = await api.post('/conversations', {
         participants: data.participants,
         type: data.participants.length > 1 ? 'group' : 'private',
-        name: data.name,
+        name: 'Creating...', // Placeholder
       }, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      addConversation(response.data);
+      const newConvo: Conversation = createResponse.data;
+
+      // Step 2: Generate and store a key for the new conversation
+      const key = await generateConversationKey();
+      await storeConversationKey(newConvo._id, key);
+
+      // Step 3: Encrypt the actual metadata
+      const conversationName = data.participants.length > 1 ? data.name : (users.find(u => u._id === data.participants[0])?.username || 'Private Chat');
+      const metadata: ConversationMetadata = {
+        name: conversationName!,
+        participants: data.participants,
+      };
+      const encryptedMetadata = await encryptConversationMetadata(metadata, key);
+
+      // Step 4: Update the conversation with the encrypted metadata
+      const updateResponse = await api.put(`/conversations/${newConvo._id}`, {
+        encryptedMetadata,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      addConversation(updateResponse.data);
+      reset();
       onClose();
     } catch (error) {
       console.error('Failed to create conversation:', error);
-      // You might want to display an error to the user
+      // TODO: Display an error to the user
     }
   };
 

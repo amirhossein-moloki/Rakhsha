@@ -5,6 +5,7 @@ import useAuthStore from '@/store/authStore';
 import NewConversationModal from './NewConversationModal';
 
 import { decryptConversationMetadata } from '@/lib/crypto';
+import { getOrCreateConversationKey } from '@/lib/key-manager';
 import { useState, useEffect } from 'react';
 
 interface ConversationListProps {
@@ -15,29 +16,34 @@ export default function ConversationList({ onSelectConversation }: ConversationL
   useConversations(); // Fetches conversations and populates the store
   const { conversations, setConversations, loading } = useConversationStore();
   const { token } = useAuthStore();
-  const [decrypted, setDecrypted] = useState<any>({});
+  const [decrypted, setDecrypted] = useState<Record<string, { name: string }>>({});
   const [showHidden, setShowHidden] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Auto-decrypt metadata when conversations load/change
   useEffect(() => {
     const decryptAll = async () => {
-      // THIS IS A PLACEHOLDER KEY. In a real app, this key would be securely retrieved.
-      const placeholderKey = Buffer.from('0123456789abcdef0123456789abcdef');
-      const newDecrypted: any = {};
+      const newDecrypted: Record<string, { name: string }> = {};
       for (const convo of conversations) {
-        if (!decrypted[convo._id]) { // Only decrypt if not already done
+        // Only decrypt if not already done or if the encrypted data has changed
+        if (!decrypted[convo._id] || decrypted[convo._id].name === 'Loading...') {
           try {
-            const metadata = await decryptConversationMetadata(convo.encryptedMetadata, placeholderKey);
+            // This is a critical step: get the key for the conversation.
+            // In a real E2EE app, this key must have been securely shared.
+            // Our getOrCreateConversationKey function simulates this for now.
+            const key = await getOrCreateConversationKey(convo._id);
+            const metadata = await decryptConversationMetadata(convo.encryptedMetadata, key);
             newDecrypted[convo._id] = metadata;
           } catch (error) {
             console.error('Failed to decrypt metadata for convo:', convo._id, error);
             // Provide a user-friendly fallback name
-            newDecrypted[convo._id] = { name: `Conversation ${convo._id.slice(-6)}`, participants: [] };
+            newDecrypted[convo._id] = { name: `Conversation ${convo._id.slice(-6)}` };
           }
         }
       }
-      setDecrypted(prev => ({ ...prev, ...newDecrypted }));
+      if (Object.keys(newDecrypted).length > 0) {
+        setDecrypted(prev => ({ ...prev, ...newDecrypted }));
+      }
     };
 
     if (conversations.length > 0) {
