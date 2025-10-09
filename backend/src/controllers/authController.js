@@ -1,8 +1,6 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const argon2 = require('argon2');
-const { generateECDHKeyPair, sign } = require('../utils/crypto');
-
 
 exports.register = async (req, res) => {
     try {
@@ -11,39 +9,15 @@ exports.register = async (req, res) => {
             return res.status(400).send({ error: 'Username, email, and password are required' });
         }
 
-        // 1. Generate Identity Key
-        const identityKeyPair = generateECDHKeyPair();
-
-        // 2. Generate Signed Pre-Key
-        const signedPreKeyPair = generateECDHKeyPair();
-
-        // 3. Sign the public part of the signed pre-key with the private identity key
-        const signature = sign(signedPreKeyPair.publicKey, identityKeyPair.privateKey);
-
-        // 4. Generate One-Time Pre-Keys
-        const oneTimePreKeys = [];
-        for (let i = 0; i < 50; i++) {
-            const oneTimePreKeyPair = generateECDHKeyPair();
-            oneTimePreKeys.push({
-                keyId: i + 1,
-                publicKey: oneTimePreKeyPair.publicKey,
-            });
-        }
-
         const passwordHash = await argon2.hash(password);
 
+        // In the new flow, the user is created without any keys.
+        // The client is responsible for generating keys and uploading them
+        // in a separate step after registration.
         const user = new User({
             username,
             email,
             passwordHash,
-            identityKey: identityKeyPair.publicKey,
-            preKeyBundle: {
-                signedPreKey: {
-                    publicKey: signedPreKeyPair.publicKey,
-                    signature: signature,
-                },
-                oneTimePreKeys: oneTimePreKeys,
-            },
         });
 
         // We will attempt to save the user. If it fails due to a duplicate key,

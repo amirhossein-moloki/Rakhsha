@@ -24,32 +24,28 @@ app.use(trafficObfuscation);
 // Apply request padding middleware to all requests
 app.use(requestPadding);
 
-const rateLimit = require('express-rate-limit');
+// Route imports
 const authRoutes = require('./routes/auth');
 const conversationRoutes = require('./routes/conversations');
 const userRoutes = require('./routes/user');
 const messageRoutes = require('./routes/message');
-// const fileRoutes = require('./routes/file');
-// const nodeRoutes = require('./routes/node');
+const keyRoutes = require('./routes/key');
+const fileRoutes = require('./routes/file');
+const nodeRoutes = require('./routes/node');
 
 app.get('/', (req, res) => {
     res.send('Hello World!');
 });
 
-// Apply rate limiting to authentication routes
-const authLimiter = rateLimit({
-	windowMs: 15 * 60 * 1000, // 15 minutes
-	max: 100, // Limit each IP to 100 requests per window
-	standardHeaders: true,
-	legacyHeaders: false,
-});
-
-app.use('/api/auth', authLimiter, authRoutes);
+// Registering routes
+// Rate limiting is now handled within the authRoutes file itself.
+app.use('/api/auth', authRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/messages', messageRoutes);
-// app.use('/api/files', fileRoutes);
-// app.use('/api/nodes', nodeRoutes);
+app.use('/api/keys', keyRoutes);
+app.use('/api/files', fileRoutes);
+app.use('/api/nodes', nodeRoutes);
 
 const errorHandler = require('./middleware/errorHandler');
 app.use(errorHandler);

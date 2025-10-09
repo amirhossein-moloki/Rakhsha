@@ -23,19 +23,18 @@ const UserSchema = new mongoose.Schema({
         type: String,
         select: false // Do not include by default in queries
     },
-    // For E2EE Key Exchange (X3DH)
-    identityKey: { // ECDH public identity key
-        type: String,
-        required: true
-    },
+    // For E2EE Key Exchange (Signal Protocol)
+    identityKey: { type: String },
+    registrationId: { type: Number },
     preKeyBundle: {
         signedPreKey: {
-            publicKey: { type: String, required: true },
-            signature: { type: String, required: true }
+            keyId: { type: Number },
+            publicKey: { type: String },
+            signature: { type: String }
         },
         oneTimePreKeys: [{
-            keyId: { type: Number, required: true },
-            publicKey: { type: String, required: true }
+            keyId: { type: Number },
+            publicKey: { type: String }
         }]
     },
     profilePictureUrl: {

@@ -1,5 +1,3 @@
-const dotenv = require('dotenv');
-const path = require('path');
-
-// Explicitly load the .env file from the project root
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+// Load environment variables from the root .env file for the test environment
+// The path is relative to the 'backend' directory, where 'npm test' is executed.
+require('dotenv').config({ path: '../.env' });
