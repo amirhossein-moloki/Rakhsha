@@ -1,0 +1,128 @@
+{
+  "scores": {
+    "frontend": {
+      "total": 11,
+      "breakdown": {
+        "code_quality": 4,
+        "performance": 1,
+        "ux_a11y": 3,
+        "state_query": 4,
+        "security": 1,
+        "tests": 2
+      }
+    },
+    "backend": {
+      "total": 23,
+      "breakdown": {
+        "architecture_quality": 5,
+        "api_design": 6,
+        "database": 5,
+        "scalability_performance": 4,
+        "security": 2,
+        "tests_observability": 5
+      }
+    },
+    "coordination": {
+      "total": 10,
+      "breakdown": {
+        "contract_alignment": 3,
+        "change_synchrony": 2,
+        "e2e_observability": 1,
+        "fault_tolerance": 4
+      }
+    }
+  },
+  "findings": {
+    "strengths": [
+      "معماری امنیتی و حریم خصوصی در بک‌اند (جلوگیری از timing attack، رمزنگاری فراداده).",
+      "پیاده‌سازی هماهنگ پنهان‌سازی ترافیک (Padding) در هر دو لایه.",
+      "پوشش تست خوب و جامع در بک‌اند."
+    ],
+    "risks": [
+      {
+        "title": "پیاده‌سازی شکسته و ناامن رمزنگاری سرتاسری (E2EE)",
+        "severity": "High",
+        "evidence": "backend/src/controllers/keyController.js (مدیریت نادرست one-time pre-keys), frontend/src/lib/crypto.ts (خطاهای متعدد TypeScript)",
+        "impact": "امنیت اصلی برنامه و محرمانگی پیام‌ها به طور کامل از بین رفته است.",
+        "fix": "بازنویسی کامل لایه رمزنگاری در هر دو سمت با پیروی دقیق از پروتکل Signal/X3DH."
+      },
+      {
+        "title": "فرانت‌اند غیرقابل بیلد و پر از خطای TypeScript",
+        "severity": "High",
+        "evidence": "خروجی دستور `npm run build` در پوشه `frontend`",
+        "impact": "امکان تهیه نسخه پروداکشن از برنامه وجود ندارد و کد به شدت مستعد باگ است.",
+        "fix": "رفع تمام خطاهای TypeScript با اولویت بالا. فعال کردن حالت strict و حذف تمام موارد `any`."
+      },
+      {
+        "title": "مغایرت حیاتی پروتکل Sealed Sender",
+        "severity": "Medium",
+        "evidence": "وجود فیلد `senderId` در `backend/src/models/Message.js` که با `PROTOCOL.md` در تضاد است.",
+        "impact": "یکی از ادعاهای اصلی حریم خصوصی پروژه نقض شده است.",
+        "fix": "حذف فیلد `senderId` از مدل دیتابیس و اطمینان از عدم ذخیره آن."
+      }
+    ]
+  },
+  "mismatches": [
+    {
+      "endpoint": "/api/messages",
+      "field": "senderId",
+      "frontend_type": "N/A",
+      "backend_type": "ObjectId (Stored in DB)",
+      "status_code": 201,
+      "recommendation": "پروتکل Sealed Sender در مستندات ادعا می‌کند شناسه فرستنده ذخیره نمی‌شود، اما فیلد آن در مدل دیتابیس وجود دارد. این فیلد باید حذف شود."
+    },
+    {
+      "endpoint": "N/A (Frontend Type System)",
+      "field": "Multiple",
+      "frontend_type": "any",
+      "backend_type": "N/A",
+      "status_code": 0,
+      "recommendation": "استفاده گسترده از `any` در فرانت‌اند باعث ناهماهنگی با انواع داده واقعی و بروز خطاهای متعدد در زمان کامپایل و اجرا شده است. باید با انواع داده دقیق جایگزین شوند."
+    }
+  ],
+  "test_scenarios": [
+    {
+      "name": "ثبت‌نام و ورود از طریق API",
+      "steps": [
+        "ارسال درخواست POST به /api/auth/register با curl",
+        "ارسال درخواست POST به /api/auth/login با curl"
+      ],
+      "sample_request": {
+        "method": "POST",
+        "url": "/api/auth/register",
+        "body": {
+          "username": "testuser",
+          "email": "test@example.com",
+          "password": "password123"
+        }
+      },
+      "sample_response": {
+        "status": 400,
+        "body": {
+          "error": "Invalid request size. All requests with a body must be padded to exactly 4096 bytes."
+        }
+      },
+      "metrics": {
+        "latency_ms": 0,
+        "errors": 2
+      }
+    }
+  ],
+  "roadmap": {
+    "week_0_2": [
+      "رفع تمام خطاهای بیلد TypeScript در فرانت‌اند.",
+      "اصلاح آسیب‌پذیری حیاتی E2EE در بک‌اند (بازنویسی keyController.js).",
+      "حذف تمام کلیدهای خصوصی از ریپازیتوری git."
+    ],
+    "week_2_6": [
+      "همسان‌سازی پیاده‌سازی Sealed Sender با مستندات.",
+      "ایجاد مستند OpenAPI واحد برای API.",
+      "فعال‌سازی حالت strict در TypeScript و حذف موارد `any`."
+    ],
+    "week_6_plus": [
+      "معرفی تست‌های Contract (PACT) در CI/CD.",
+      "استانداردسازی فرمت خطاها در سراسر برنامه.",
+      "پیاده‌سازی مشاهده‌پذیری سرتاسری با correlation-id و tracing."
+    ]
+  }
+}

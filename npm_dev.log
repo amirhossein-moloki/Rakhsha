@@ -3,7 +3,11 @@
 > vite
 
 
-  VITE v5.4.20  ready in 275 ms
+> frontend@0.0.0 dev
+> vite
+
+
+  VITE v5.4.20  ready in 347 ms
 
   ➜  Local:   http://localhost:5173/
   ➜  Network: use --host to expose
